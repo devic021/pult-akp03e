@@ -22,6 +22,12 @@ final class AppState: ObservableObject {
     @Published private(set) var saved = Config()
     @Published private(set) var status: Status?
     @Published private(set) var connected = false
+    /// Whether a configuration has ever arrived.
+    ///
+    /// Not the same as `connected`: losing the daemon later leaves everything
+    /// on screen and only greys the status line, which is right. Never having
+    /// had it is a different situation and needs a different screen.
+    @Published private(set) var loaded = false
     @Published var error: String?
 
     /// Which pane is open. Held here rather than in the view, because changing
@@ -236,6 +242,7 @@ final class AppState: ObservableObject {
                     self.selectedScene = status.scene ?? config.sceneNames.first
                 }
                 self.connected = true
+                self.loaded = true
                 self.error = nil
             }
         }

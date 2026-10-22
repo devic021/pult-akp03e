@@ -32,6 +32,21 @@ struct RootView: View {
     @EnvironmentObject private var l10n: L10n
     @EnvironmentObject private var theme: Theme
     var body: some View {
+        // Never having had a configuration is a different situation from
+        // having lost one, and it gets its own screen: the ordinary window
+        // rendered with nothing in it came up as an empty frame.
+        if state.loaded {
+            main
+        } else {
+            Welcome()
+                .environmentObject(state)
+                .environment(\.font, .appBody)
+                .preferredColorScheme(theme.appearance.colorScheme)
+                .id("\(theme.textSize.rawValue)-\(l10n.resolved.rawValue)")
+        }
+    }
+
+    private var main: some View {
         NavigationSplitView {
             Sidebar(panel: $state.panel)
                 .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 330)
@@ -49,6 +64,7 @@ struct RootView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaInset(edge: .top, spacing: 0) { FirstRun() }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar() }
         }
         // Anything that does not name a font inherits this one, which is how
@@ -70,7 +86,9 @@ struct RootView: View {
 
 /// The window itself: flat and neutral. A gradient behind everything is what
 /// made the first version read as a poster rather than as an application.
-private struct Backdrop: View {
+/// Shared with the first-run screen, so the window looks like the same app
+/// before anything has loaded as it does afterwards.
+struct Backdrop: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -347,6 +365,64 @@ private struct SceneRow: View {
         Divider()
         Button(T("scene.delete"), role: .destructive) { state.deleteScene(name) }
             .disabled(name == state.config.defaultScene)
+    }
+}
+
+/// Shown when the dock is silent because nothing is driving it.
+///
+/// A copy dragged out of a disk image has an app and a daemon but no login
+/// agent, so it comes up connected to nothing. Leaving that to be discovered
+/// in Settings means the first thing a new copy does is look broken, so it
+/// says what is wrong and fixes it in one press — and it is gone the moment
+/// there is nothing to fix.
+private struct FirstRun: View {
+    @EnvironmentObject private var state: AppState
+    @State private var working = false
+
+    private var needed: Bool {
+        !state.connected && (!Service.isInstalled || !Service.isCurrent)
+    }
+
+    var body: some View {
+        if needed {
+            HStack(spacing: 12) {
+                Image(systemName: "bolt.horizontal.circle")
+                    .font(.app(16, weight: .semibold))
+                    .foregroundStyle(Design.warn)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Service.isInstalled ? T("service.repair") : T("service.install"))
+                        .font(.appHeadline)
+                    Text(Service.isInstalled
+                        ? T("service.repair.help")
+                        : T("service.install.help"))
+                        .font(.appCallout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Button(Service.isInstalled ? T("service.repair.go") : T("service.install.go")) {
+                    working = true
+                    _ = Service.install()
+                    // launchd has the job the moment bootstrap returns, but the
+                    // daemon still has to open the device and the socket.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        state.refresh()
+                        working = false
+                    }
+                }
+                .buttonStyle(.pultProminent)
+                .disabled(working)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.regularMaterial)
+            .overlay(alignment: .bottom) {
+                Rectangle().fill(.white.opacity(0.10)).frame(height: 1)
+            }
+        }
     }
 }
 

@@ -13,6 +13,8 @@ struct SettingsView: View {
     @EnvironmentObject private var theme: Theme
 
     @State private var loaded = true
+    /// Whether a login agent exists and points at this copy of the app.
+    @State private var installed = true
     @State private var exportMessage: String?
 
     private var allowed: Bool { state.status?.keystrokes_allowed ?? false }
@@ -120,6 +122,28 @@ struct SettingsView: View {
                         }
                     }
 
+                    // Shown only when there is something wrong to fix, so it
+                    // is an answer rather than a permanent row of maintenance.
+                    if !Service.isInstalled || !Service.isCurrent {
+                        ActionCard(
+                            Service.isInstalled ? T("service.repair") : T("service.install"),
+                            symbol: "wrench.and.screwdriver",
+                            detail: Service.isInstalled
+                                ? T("service.repair.help")
+                                : T("service.install.help"),
+                            tinted: true
+                        ) {
+                            Button(
+                                Service.isInstalled ? T("service.repair.go") : T("service.install.go")
+                            ) {
+                                installed = Service.install()
+                                loaded = Service.isLoaded()
+                                state.refresh()
+                            }
+                            .buttonStyle(.pultProminent)
+                        }
+                    }
+
                     ActionCard(T("service.login"), symbol: "power", detail: T("service.login.help")) {
                         Toggle("", isOn: Binding(
                             get: { loaded },
@@ -131,7 +155,10 @@ struct SettingsView: View {
                         .labelsHidden()
                         .toggleStyle(.switch)
                     }
-                    .task { loaded = Service.isLoaded() }
+                    .task {
+                        loaded = Service.isLoaded()
+                        installed = Service.isInstalled && Service.isCurrent
+                    }
                 }
 
                 Section2(T("section.files"), symbol: "folder") {

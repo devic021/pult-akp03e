@@ -74,6 +74,16 @@ final class L10n: ObservableObject {
     }
 
     static let en: [String: String] = [
+        "welcome.says": "Pult drives an Ajazz AKP03E from this Mac. Two things before it can: a small background service, and permission for it to press keys on your behalf.",
+        "welcome.permission": "Let it press keys",
+        "welcome.permission.says": "Keys bound to a shortcut need this. System Settings \u{203A} Privacy & Security \u{203A} Device Control and Data Access \u{2014} tick pultd there. It was called Accessibility before macOS 27.",
+        "welcome.still": "Still nothing. Check that the dock is plugged in, then look at the log in Settings.",
+        "service.install": "Start the background service",
+        "service.install.help": "The dock is driven by a small service that runs in the background. It is inside this app; this sets it to start when you log in.",
+        "service.install.go": "Start it",
+        "service.repair": "The service points somewhere else",
+        "service.repair.help": "It was set up for a copy of Pult at another path \u{2014} most likely this one was moved. Point it here instead.",
+        "service.repair.go": "Point it here",
         "animations.new": "New animation",
         "animations.rename": "Rename",
         "animations.name": "Name",
@@ -339,6 +349,16 @@ final class L10n: ObservableObject {
     ]
 
     static let sr: [String: String] = [
+        "welcome.says": "Pult vodi Ajazz AKP03E sa ovog Mac-a. Dve stvari pre nego \u{161}to mo\u{17e}e: mali pozadinski servis, i dozvola da u tvoje ime pritiska tastere.",
+        "welcome.permission": "Dozvoli mu da pritiska tastere",
+        "welcome.permission.says": "Tasteri vezani za pre\u{10d}icu ovo tra\u{17e}e. Pode\u{161}avanja sistema \u{203A} Privatnost i bezbednost \u{203A} Kontrola ure\u{111}aja i pristup podacima \u{2014} \u{10d}ekiraj pultd tamo. Pre macOS 27 se zvalo Pristupa\u{10d}nost.",
+        "welcome.still": "I dalje ni\u{161}ta. Proveri da li je dok priklju\u{10d}en, pa pogledaj dnevnik u Pode\u{161}avanjima.",
+        "service.install": "Pokreni pozadinski servis",
+        "service.install.help": "Dok vodi mali servis koji radi u pozadini. Nalazi se unutar ove aplikacije; ovim ga name\u{161}ta\u{161} da se pokre\u{107}e pri prijavi.",
+        "service.install.go": "Pokreni",
+        "service.repair": "Servis pokazuje na drugo mesto",
+        "service.repair.help": "Name\u{161}ten je za kopiju Pulta na drugoj putanji \u{2014} najverovatnije je ova premesena. Usmeri ga ovde.",
+        "service.repair.go": "Usmeri ovde",
         "animations.new": "Nova animacija",
         "animations.rename": "Preimenuj",
         "animations.name": "Naziv",
