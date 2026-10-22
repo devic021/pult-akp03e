@@ -3,8 +3,8 @@ import UniformTypeIdentifiers
 
 /// What can actually be set on the dock itself: brightness, the boot logo it
 /// keeps when unplugged, and sleep. There is nothing else — the device stores
-/// no profiles of its own, which the page says out loud rather than leaving
-/// you to wonder where the rest of the settings are.
+/// no profiles of its own, which the page says rather than leaving you to
+/// wonder where the rest of the settings went.
 struct DeviceView: View {
     @EnvironmentObject private var state: AppState
     @State private var logoMessage: String?
@@ -16,67 +16,79 @@ struct DeviceView: View {
                 PageHeader(T("device.title"), symbol: "dial.medium", intro: T("device.intro"))
 
                 if let device = state.status?.device {
-                    SettingsCard(title: T("about.device")) {
-                        SettingsRow(T("device.model")) {
-                            Text(device.kind).font(.appCallout.monospaced())
+                    HStack(alignment: .center, spacing: 16) {
+                        ZStack {
+                            Circle().fill(Design.accentSoft)
+                            Image(systemName: "dial.medium")
+                                .font(.app(24, weight: .medium))
+                                .foregroundStyle(Design.accent)
                         }
-                        SettingsRow(T("device.serial")) {
-                            Text(device.serial).font(.appCallout.monospaced())
-                        }
-                        SettingsRow(T("device.firmware")) {
-                            Text(device.firmware).font(.appCallout.monospaced())
-                        }
-                        SettingsRow(T("device.keys")) {
-                            Text("\(device.keys) + \(device.buttons) · \(device.encoders) ⟳")
-                                .font(.appCallout.monospaced())
-                        }
-                    }
-                } else {
-                    SettingsCard {
-                        SettingsRow(T("status.device")) {
-                            Label(T("device.disconnected"), systemImage: "exclamationmark.triangle")
-                                .font(.appCallout)
-                                .foregroundStyle(.orange)
-                        }
-                    }
-                }
+                        .frame(width: 60, height: 60)
 
-                SettingsCard(title: T("device.brightness")) {
-                    SettingsRow(T("device.brightness"), help: T("help.brightness")) {
-                        HStack(spacing: 12) {
-                            Image(systemName: "sun.min").foregroundStyle(.secondary)
-                            // Driven by local state: binding a control to a
-                            // published value the same view rebuilds from makes
-                            // it fight the drag.
-                            Slider(value: $brightness, in: 0...100) { editing in
-                                if !editing {
-                                    state.config.brightness = Int(brightness.rounded())
-                                    state.setBrightness(Int(brightness.rounded()), final: true)
-                                }
-                            }
-                            .frame(minWidth: 140, maxWidth: 320)
-                            .onChange(of: brightness) { _, value in
-                                state.setBrightness(Int(value.rounded()))
-                            }
-                            Image(systemName: "sun.max").foregroundStyle(.secondary)
-                            Text("\(Int(brightness.rounded()))%")
-                                .font(.appCallout.monospacedDigit())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(About.device).font(.app(20, weight: .semibold))
+                            Text("\(device.serial) · \(device.firmware)")
+                                .font(.appCallout.monospaced())
+                                .foregroundStyle(.secondary)
+                            Text("\(device.keys) + \(device.buttons) \(T("count.keys")) · \(device.encoders) \(T("count.knobs"))")
+                                .font(.appCaption)
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(state.connected ? Design.good : Design.warn)
+                                .frame(width: 8, height: 8)
+                            Text(state.connected ? T("status.connected") : T("status.disconnected"))
+                                .font(.appCallout)
                                 .foregroundStyle(.secondary)
                         }
                     }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .card()
+                } else {
+                    ActionCard(
+                        T("device.disconnected"),
+                        symbol: "exclamationmark.triangle",
+                        detail: T("help.disconnected"),
+                        tinted: true
+                    ) {
+                        EmptyView()
+                    }
+                }
 
-                    SettingsDivider()
-
-                    SettingsRow(T("device.sleep")) {
-                        HStack(spacing: 8) {
-                            Button(T("device.sleep")) { state.sleepDock() }
-                                .buttonStyle(.pult)
-                                .controlSize(.small)
-                                .help(T("help.sleep"))
-                            Button(T("device.wake")) { state.wakeDock() }
-                                .buttonStyle(.pult)
-                                .controlSize(.small)
+                ActionCard(T("device.brightness"), symbol: "sun.max", detail: T("help.brightness")) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "sun.min").foregroundStyle(.tertiary)
+                        // Driven by local state: binding a control to a
+                        // published value the same view rebuilds from makes it
+                        // fight the drag.
+                        Slider(value: $brightness, in: 0...100) { editing in
+                            if !editing {
+                                state.config.brightness = Int(brightness.rounded())
+                                state.setBrightness(Int(brightness.rounded()), final: true)
+                            }
                         }
+                        .frame(width: 170)
+                        .onChange(of: brightness) { _, value in
+                            state.setBrightness(Int(value.rounded()))
+                        }
+                        Text("\(Int(brightness.rounded()))%")
+                            .font(.appCallout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 42, alignment: .trailing)
+                    }
+                }
+
+                ActionCard(T("device.sleep"), symbol: "moon", detail: T("help.sleep")) {
+                    HStack(spacing: 8) {
+                        Button(T("device.sleep")) { state.sleepDock() }
+                            .buttonStyle(.pult)
+                        Button(T("device.wake")) { state.wakeDock() }
+                            .buttonStyle(.pult)
                     }
                 }
 
@@ -94,15 +106,13 @@ struct DeviceView: View {
                                 .foregroundStyle(.tertiary)
                         }
                         if let logoMessage {
-                            Text(logoMessage)
-                                .font(.appCaption)
-                                .foregroundStyle(.secondary)
+                            Text(logoMessage).font(.appCaption).foregroundStyle(.secondary)
                         }
                     }
                 }
             }
             .padding(28)
-            .frame(maxWidth: 900, alignment: .leading)
+            .frame(maxWidth: 860, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)

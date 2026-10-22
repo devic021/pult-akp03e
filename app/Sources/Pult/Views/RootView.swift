@@ -5,6 +5,15 @@ enum Panel: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
     var label: String { T("nav.\(rawValue)") }
+
+    /// ⌘1, ⌘2, ⌘3 — the panes are few and fixed, so they get numbers.
+    var shortcut: KeyEquivalent {
+        switch self {
+        case .scenes: return "1"
+        case .device: return "2"
+        case .settings: return "3"
+        }
+    }
     var symbol: String {
         switch self {
         case .scenes: return "square.grid.2x2"
@@ -106,6 +115,7 @@ private struct Sidebar: View {
                             .contentShape(.rect)
                         }
                         .buttonStyle(.plain)
+                        .keyboardShortcut(item.shortcut, modifiers: .command)
                         .listRowBackground(
                             panel == item
                                 ? AnyView(RoundedRectangle(cornerRadius: 7).fill(Design.pill(.dark)))
@@ -221,6 +231,39 @@ private struct DockCard: View {
     }
 }
 
+/// A scene wears the icon of the first application it claims: the browser
+/// scene shows the browser. Scenes nothing claims fall back to a mark.
+private struct SceneIcon: View {
+    @EnvironmentObject private var state: AppState
+    @StateObject private var installed = Installed.shared
+    let name: String
+
+    private var bundleID: String? {
+        state.config.scenes[name]?.apps.first
+    }
+
+    var body: some View {
+        Group {
+            if let bundleID,
+               let app = installed.apps.first(where: { $0.bundleID == bundleID }) {
+                Image(nsImage: installed.icon(for: app))
+                    .resizable()
+                    .frame(width: 16, height: 16)
+            } else if let bundleID, let icon = state.runningIcons[bundleID] {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: "square.grid.2x2")
+                    .font(.app(11))
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 16, height: 16)
+            }
+        }
+        .task { installed.load() }
+    }
+}
+
 /// The small upper-case label above a group of sidebar rows.
 private struct SidebarHeading: View {
     let title: String
@@ -244,7 +287,8 @@ private struct SceneRow: View {
     private var scene: DeckScene? { state.config.scenes[name] }
 
     var body: some View {
-        HStack(spacing: 7) {
+        HStack(spacing: 8) {
+            SceneIcon(name: name)
             Text(name).font(.appBody)
             Spacer()
 
