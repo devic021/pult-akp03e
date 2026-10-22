@@ -35,6 +35,9 @@ enum Design {
 
     static let muted = Color(red: 0.631, green: 0.631, blue: 0.659)
 
+    /// The gutter between the pane's edge and the content.
+    static let pagePadding: CGFloat = 28
+
     // Concentric and modest: each radius is the one outside it, less the
     // padding between them.
     static let radiusField: CGFloat = 8

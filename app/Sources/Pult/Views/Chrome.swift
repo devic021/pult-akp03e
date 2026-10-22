@@ -53,7 +53,7 @@ struct PageHeader: View {
                     .font(.appBody)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 720, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -115,18 +115,18 @@ struct Section2<Content: View>: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 7) {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
                 if let symbol {
                     Image(systemName: symbol)
-                        .font(.appCaption)
-                        .foregroundStyle(.tertiary)
+                        .font(.app(13, weight: .medium))
+                        .foregroundStyle(Design.accent)
                 }
                 Text(title)
-                    .font(.appCaption.weight(.semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.app(14, weight: .semibold))
+                    .foregroundStyle(.secondary)
                     .textCase(.uppercase)
-                    .tracking(0.6)
+                    .tracking(0.8)
             }
             .padding(.leading, 2)
 

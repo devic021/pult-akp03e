@@ -19,7 +19,7 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 28) {
                 PageHeader(T("nav.settings"), symbol: "gearshape", intro: T("settings.intro"))
 
                 Section2(T("section.look"), symbol: "paintbrush") {
@@ -198,8 +198,9 @@ struct SettingsView: View {
                     AboutRows()
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 880, alignment: .leading)
+            .padding(Design.pagePadding)
+            // No content cap: the boxes run the full width of the pane, which
+            // is what was asked for on a wide display.
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)

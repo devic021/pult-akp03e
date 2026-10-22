@@ -111,8 +111,9 @@ struct DeviceView: View {
                     }
                 }
             }
-            .padding(28)
-            .frame(maxWidth: 860, alignment: .leading)
+            .padding(Design.pagePadding)
+            // No content cap: the boxes run the full width of the pane, which
+            // is what was asked for on a wide display.
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
