@@ -74,6 +74,9 @@ final class L10n: ObservableObject {
     }
 
     static let en: [String: String] = [
+        "animations.new": "New animation",
+        "animations.rename": "Rename",
+        "animations.name": "Name",
         "section.effect": "Choose a motion",
         "section.trial": "On the dock",
         "section.knobs": "Settings for this motion",
@@ -336,6 +339,9 @@ final class L10n: ObservableObject {
     ]
 
     static let sr: [String: String] = [
+        "animations.new": "Nova animacija",
+        "animations.rename": "Preimenuj",
+        "animations.name": "Naziv",
         "section.effect": "Izaberi pokret",
         "section.trial": "Na doku",
         "section.knobs": "Pode\u{161}avanja ovog pokreta",

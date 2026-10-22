@@ -30,6 +30,13 @@ final class AppState: ObservableObject {
     @Published var panel: Panel = .scenes
 
     @Published var selectedScene: String?
+    /// Which drawing the Animations pane is editing.
+    ///
+    /// Its own selection, not the sidebar's. Sharing one would mean switching
+    /// to Animations and back left you on a different scene than you were
+    /// editing, and giving an application's scene a backdrop — the unusual
+    /// case, reachable from the picker — would drag the sidebar with it.
+    @Published var selectedDrawing: String?
     @Published var page = 0
     @Published var selection: Selection?
 
@@ -541,6 +548,32 @@ final class AppState: ObservableObject {
         page = 0
     }
 
+    /// A new scene that is nothing but a drawing.
+    ///
+    /// No keys, and one button bound back to the default scene. That button is
+    /// not decoration: a canvas replaces the picture, so nothing on the dock
+    /// says what the keys do any more, and without a way out the only way back
+    /// is to switch applications.
+    func addDrawing(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, config.scenes[trimmed] == nil else { return }
+
+        var back = Action()
+        back.scene = config.defaultScene
+        var scene = DeckScene()
+        scene.buttons = [back]
+        scene.surface = Surface(kind: "canvas", effect: catalogue.effects.first?.name)
+        config.scenes[trimmed] = scene
+        selectedDrawing = trimmed
+    }
+
+    /// The drawing on screen in the Animations pane: the one chosen, or the
+    /// first there is.
+    var drawing: String? {
+        if let chosen = selectedDrawing, config.scenes[chosen] != nil { return chosen }
+        return config.drawingScenes.first
+    }
+
     func renameScene(_ name: String, to newName: String) {
         let trimmed = newName.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed != name, config.scenes[trimmed] == nil,
@@ -560,12 +593,14 @@ final class AppState: ObservableObject {
             if touched { config.scenes[key] = other }
         }
         if selectedScene == name { selectedScene = trimmed }
+        if selectedDrawing == name { selectedDrawing = trimmed }
     }
 
     func deleteScene(_ name: String) {
         guard config.scenes.count > 1, name != config.defaultScene else { return }
         config.scenes.removeValue(forKey: name)
         if selectedScene == name { selectedScene = config.sceneNames.first }
+        if selectedDrawing == name { selectedDrawing = nil }
     }
 
     func addPage() {

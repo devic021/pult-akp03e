@@ -18,7 +18,7 @@ struct AnimationsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     Header(width: content)
 
-                    if let name = state.selectedScene, state.config.scenes[name] != nil {
+                    if let name = state.drawing {
                         SurfaceSection(name: name, width: content)
                     } else {
                         Empty()
@@ -32,10 +32,21 @@ struct AnimationsView: View {
     }
 }
 
-/// Which scene is being painted, and a way to change it without going back.
+/// Which drawing is being edited, and everything you can do to it.
+///
+/// The picker and the menu are here rather than in the sidebar because the
+/// sidebar is about applications. A drawing is not one, and listing drawings
+/// there too was the same names in two places, where the sidebar copy only
+/// opened this pane anyway.
 private struct Header: View {
     let width: CGFloat
     @EnvironmentObject private var state: AppState
+
+    @State private var naming = false
+    @State private var draft = ""
+    @State private var renaming = false
+
+    private var chosen: String? { state.drawing }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -50,15 +61,54 @@ private struct Header: View {
                 Spacer(minLength: 16)
 
                 Picker("", selection: Binding(
-                    get: { state.selectedScene ?? "" },
-                    set: { state.selectedScene = $0.isEmpty ? nil : $0 }
+                    get: { chosen ?? "" },
+                    set: { state.selectedDrawing = $0.isEmpty ? nil : $0 }
                 )) {
-                    ForEach(state.config.sceneNames, id: \.self) { name in
-                        Text(name).tag(name)
+                    // Drawings first and under their own heading: an
+                    // application's scene can have a backdrop too, but that is
+                    // the unusual case and should not head the list.
+                    if !state.config.drawingScenes.isEmpty {
+                        Section(T("nav.animations")) {
+                            ForEach(state.config.drawingScenes, id: \.self) { name in
+                                Text(name).tag(name)
+                            }
+                        }
+                    }
+                    Section(T("nav.scenes")) {
+                        ForEach(state.config.keyScenes, id: \.self) { name in
+                            Text(name).tag(name)
+                        }
                     }
                 }
                 .labelsHidden()
                 .frame(maxWidth: 220)
+
+                Menu {
+                    Button(T("animations.new")) {
+                        draft = ""
+                        renaming = false
+                        naming = true
+                    }
+                    if let chosen {
+                        Button(T("animations.rename")) {
+                            draft = chosen
+                            renaming = true
+                            naming = true
+                        }
+                        Button(T("scene.show")) { state.show(scene: chosen) }
+                        Divider()
+                        Button(T("scene.delete"), role: .destructive) {
+                            state.deleteScene(chosen)
+                        }
+                        .disabled(chosen == state.config.defaultScene)
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").font(.app(15))
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help(T("scene.menu"))
             }
 
             Text(T("animations.says"))
@@ -67,6 +117,38 @@ private struct Header: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(width: width, alignment: .leading)
+        .popover(isPresented: $naming) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(renaming ? T("animations.rename") : T("animations.new"))
+                    .font(.appHeadline)
+                TextField(T("animations.name"), text: $draft)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 220)
+                    .onSubmit { commit() }
+                HStack {
+                    Spacer()
+                    Button(T("close")) { naming = false }
+                        .buttonStyle(.pult)
+                        .keyboardShortcut(.cancelAction)
+                    Button(renaming ? T("animations.rename") : T("animations.new")) { commit() }
+                        .buttonStyle(.pultProminent)
+                        .keyboardShortcut(.defaultAction)
+                        .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    private func commit() {
+        let name = draft.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        if renaming, let chosen {
+            state.renameScene(chosen, to: name)
+        } else {
+            state.addDrawing(named: name)
+        }
+        naming = false
     }
 }
 
