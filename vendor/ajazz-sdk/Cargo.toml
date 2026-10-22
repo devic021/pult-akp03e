@@ -1,0 +1,26 @@
+# Local fork of ajazz-sdk 0.2.1 (MPL-2.0, https://github.com/mishamyrt/ajazz-sdk).
+#
+# One change, in src/device.rs: Ajazz::connect_path(), which opens a device by
+# its hidapi path instead of by VID/PID/serial. See PATCHES.md.
+
+[package]
+name = "ajazz-sdk"
+description = "HidApi driver for Ajazz devices"
+authors = ["TheJebForge", "mishamyrt"]
+version = "0.2.1"
+edition = "2021"
+readme = "README.md"
+homepage = "https://github.com/mishamyrt/ajazz-sdk"
+repository = "https://github.com/mishamyrt/ajazz-sdk"
+license = "MPL-2.0"
+
+[dependencies]
+hidapi = "2.6"
+image = { version = "0.25.5", default-features = false, features = ["jpeg"] }
+once_cell = "1.21.3"
+thiserror = "2.0.12"
+tokio = { version = "1", features = ["rt", "macros"], optional = true }
+
+[features]
+async = ["tokio", "tokio/sync", "tokio/rt-multi-thread", "tokio/time"]
+tokio = ["dep:tokio"]

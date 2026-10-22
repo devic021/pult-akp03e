@@ -1,0 +1,26 @@
+[package]
+name = "pult"
+version = "0.1.0"
+edition = "2021"
+description = "Per-application scene switching for the Ajazz AKP03E stream dock on macOS"
+
+[lib]
+name = "pult"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pultd"
+path = "src/main.rs"
+
+[dependencies]
+ajazz-sdk = { path = "vendor/ajazz-sdk" }
+hidapi = "2.6"
+image = { version = "0.25.5", default-features = false, features = ["jpeg", "png"] }
+anyhow = "1"
+serde = { version = "1.0.229", default-features = false, features = ["derive", "std"] }
+toml = "1.1.8"
+ab_glyph = "0.2.32"
+core-foundation = "0.10.1"
+resvg = "0.48.1"
+serde_json = "1.0.154"
+base64 = "0.23.1"

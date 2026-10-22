@@ -1,0 +1,507 @@
+# akp03-deck configuration.
+#
+#   keys      the keys with displays. More than six is fine: they are shown a
+#             page at a time, and the small left knob turns the page.
+#   buttons   the three round keys below the displays
+#   encoders  the three knobs: 0 is the small left one, 1 the big one on top,
+#             2 the small right one
+#
+# The knobs do the same thing in every scene, so the muscle memory carries:
+#   knob 0  page through the scene, press to go back to page one
+#   knob 1  whatever that app's main dial should be
+#   knob 2  output volume, press to mute
+#
+# Edits are picked up while the daemon runs; a file that fails to parse is
+# reported and the running configuration is kept.
+#
+# A key carries at most one action:
+#   run      = "shell command"     runs it detached
+#   shortcut = "cmd+shift+4"       sends a keystroke (needs Accessibility)
+#   volume   = -5                  changes output volume by that much
+#   scene    = "other"             switches scene by hand
+#   page     = "next"|"prev"|"first"
+#
+# ...and is drawn from:
+#   label       text, shrunk and wrapped to fit
+#   icon        a bundled icon's name, or a path to an SVG or image
+#   color       background, #RGB or #RRGGBB
+#   icon_color  defaults to the label colour
+#   animate     "pulse" (breathes), "spin" (turns), "blink" (flashes)
+#
+# Find an app's bundle ID with:  lsappinfo info -only bundleid "$(lsappinfo front)"
+
+brightness = 70
+poll_ms = 300
+press_feedback = true
+default = "general"
+
+# ---------------------------------------------------------------- general ----
+# Shown whenever no other scene claims the frontmost app.
+[scenes.general]
+
+keys = [
+  { icon = "folder",      label = "Finder",  color = "#1f6feb", run = "open -a Finder" },
+  { icon = "terminal",    label = "iTerm",   color = "#30363d", run = "open -a iTerm" },
+  { icon = "globe",       label = "Chrome",  color = "#d93025", run = "open -a 'Google Chrome'" },
+  { icon = "layout-grid", label = "Spaces",  color = "#9a6700", shortcut = "ctrl+up" },
+  { icon = "camera",      label = "Shot",    color = "#1a7f37", shortcut = "cmd+shift+4" },
+  { icon = "moon",        label = "Sleep",   color = "#6e40c9", run = "pmset displaysleepnow" },
+
+  { icon = "message-square", label = "Teams",  color = "#4b53bc", run = "open -a 'Microsoft Teams'" },
+  { icon = "hash",        label = "Slack",   color = "#611f69", run = "open -a Slack" },
+  { icon = "inbox",       label = "Mail",    color = "#1f6feb", run = "open -a Mail" },
+  { icon = "calendar-days", label = "Cal",   color = "#d93025", run = "open -a Calendar" },
+  { icon = "shield",      label = "VPN",     color = "#30363d", run = "open -a ProtonVPN" },
+  { icon = "lock",        label = "Lock",    color = "#6e40c9", shortcut = "ctrl+cmd+q" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "ctrl+right" }, ccw = { shortcut = "ctrl+left" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ----------------------------------------------------------------- VS Code ---
+[scenes.vscode]
+apps = ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"]
+
+keys = [
+  { icon = "square-terminal", label = "Term",   color = "#30363d", shortcut = "ctrl+`" },
+  { icon = "command",      label = "Palette",   color = "#1f6feb", shortcut = "cmd+shift+p" },
+  { icon = "search",       label = "Find",      color = "#30363d", shortcut = "cmd+shift+f" },
+  { icon = "wand-sparkles", label = "Format",   color = "#6e40c9", shortcut = "shift+alt+f" },
+  { icon = "panel-left",   label = "Side",      color = "#30363d", shortcut = "cmd+b" },
+  { icon = "bug",          label = "Debug",     color = "#1a7f37", shortcut = "f5", animate = "pulse" },
+
+  { icon = "braces",       label = "Comment",   color = "#30363d", shortcut = "cmd+/" },
+  { icon = "git-branch",   label = "Source",    color = "#9a6700", shortcut = "ctrl+shift+g" },
+  { icon = "replace",      label = "Replace",   color = "#30363d", shortcut = "cmd+alt+f" },
+  { icon = "file-plus",    label = "New",       color = "#1f6feb", shortcut = "cmd+n" },
+  { icon = "save",         label = "Save all",  color = "#1a7f37", shortcut = "cmd+alt+s" },
+  { icon = "x",            label = "Close",     color = "#d93025", shortcut = "cmd+w" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+alt+right" }, ccw = { shortcut = "cmd+alt+left" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------- Xcode ---
+[scenes.xcode]
+apps = ["com.apple.dt.Xcode"]
+
+keys = [
+  { icon = "hammer",       label = "Build",    color = "#1f6feb", shortcut = "cmd+b" },
+  { icon = "play",         label = "Run",      color = "#1a7f37", shortcut = "cmd+r" },
+  { icon = "circle-stop",  label = "Stop",     color = "#d93025", shortcut = "cmd+." },
+  { icon = "eraser",       label = "Clean",    color = "#9a6700", shortcut = "cmd+shift+k" },
+  { icon = "search",       label = "Open",     color = "#30363d", shortcut = "cmd+shift+o" },
+  { icon = "list",         label = "Find",     color = "#30363d", shortcut = "cmd+shift+f" },
+
+  { icon = "braces",       label = "Comment",  color = "#30363d", shortcut = "cmd+/" },
+  { icon = "panel-left",   label = "Nav",      color = "#30363d", shortcut = "cmd+0" },
+  { icon = "square-terminal", label = "Console", color = "#30363d", shortcut = "cmd+shift+y" },
+  { icon = "circle-stop",  label = "Breaks",   color = "#6e40c9", shortcut = "cmd+y" },
+  { icon = "chevron-left", label = "Back",     color = "#30363d", shortcut = "ctrl+cmd+left" },
+  { icon = "eye",          label = "Reveal",   color = "#30363d", shortcut = "cmd+shift+j" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ---------------------------------------------- Android Studio / WebStorm ----
+# One scene for both: JetBrains ships the same macOS keymap in every IDE.
+[scenes.jetbrains]
+apps = ["com.google.android.studio", "com.jetbrains.WebStorm", "com.jetbrains.intellij"]
+
+keys = [
+  { icon = "play",         label = "Run",      color = "#1a7f37", shortcut = "ctrl+r" },
+  { icon = "bug",          label = "Debug",    color = "#9a6700", shortcut = "ctrl+d" },
+  { icon = "search",       label = "Find",     color = "#30363d", shortcut = "cmd+shift+f" },
+  { icon = "command",      label = "Action",   color = "#1f6feb", shortcut = "cmd+shift+a" },
+  { icon = "wand-sparkles", label = "Format",  color = "#6e40c9", shortcut = "cmd+alt+l" },
+  { icon = "braces",       label = "Comment",  color = "#30363d", shortcut = "cmd+/" },
+
+  { icon = "clock",        label = "Recent",   color = "#30363d", shortcut = "cmd+e" },
+  { icon = "mouse-pointer-2", label = "Go to", color = "#30363d", shortcut = "cmd+b" },
+  { icon = "chevron-left", label = "Back",     color = "#30363d", shortcut = "cmd+alt+left" },
+  { icon = "pencil",       label = "Rename",   color = "#6e40c9", shortcut = "shift+f6" },
+  { icon = "square-terminal", label = "Term",  color = "#30363d", shortcut = "alt+f12" },
+  { icon = "git-commit-horizontal", label = "Commit", color = "#1a7f37", shortcut = "cmd+k" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ----------------------------------------------------------------- Resolve ---
+# Only shortcuts that are stable across Resolve versions: edit modes, marks,
+# transport, undo and save.
+[scenes.resolve]
+apps = ["com.blackmagic-design.DaVinciResolve"]
+
+keys = [
+  { icon = "play",                label = "Play",   color = "#1a7f37", shortcut = "space", animate = "pulse" },
+  { icon = "scissors",            label = "Blade",  color = "#d93025", shortcut = "b" },
+  { icon = "mouse-pointer-2",     label = "Select", color = "#1f6feb", shortcut = "a" },
+  { icon = "crop",                label = "Trim",   color = "#30363d", shortcut = "t" },
+  { icon = "arrow-right-to-line", label = "In",     color = "#30363d", shortcut = "i" },
+  { icon = "arrow-left-to-line",  label = "Out",    color = "#30363d", shortcut = "o" },
+
+  { icon = "undo-2",     label = "Undo",   color = "#9a6700", shortcut = "cmd+z" },
+  { icon = "repeat",     label = "Redo",   color = "#9a6700", shortcut = "cmd+shift+z" },
+  { icon = "save",       label = "Save",   color = "#1a7f37", shortcut = "cmd+s" },
+  { icon = "magnet",     label = "Snap",   color = "#30363d", shortcut = "n" },
+  { icon = "maximize",   label = "Fit",    color = "#30363d", shortcut = "shift+z" },
+  { icon = "trash-2",    label = "Delete", color = "#d93025", shortcut = "delete" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  # Playhead by frame, click to play.
+  { cw = { shortcut = "right" }, ccw = { shortcut = "left" }, press = { shortcut = "space" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------ Chrome ---
+[scenes.chrome]
+apps = ["com.google.Chrome", "com.apple.Safari", "org.mozilla.firefox"]
+
+keys = [
+  { icon = "plus",       label = "New",    color = "#1f6feb", shortcut = "cmd+t" },
+  { icon = "x",          label = "Close",  color = "#d93025", shortcut = "cmd+w" },
+  { icon = "rotate-ccw", label = "Reopen", color = "#1a7f37", shortcut = "cmd+shift+t" },
+  { icon = "refresh-cw", label = "Reload", color = "#30363d", shortcut = "cmd+r", animate = "spin" },
+  { icon = "search",     label = "Find",   color = "#30363d", shortcut = "cmd+f" },
+  { icon = "code-xml",   label = "Tools",  color = "#6e40c9", shortcut = "cmd+alt+i" },
+
+  { icon = "chevron-left",  label = "Back",     color = "#30363d", shortcut = "cmd+[" },
+  { icon = "chevron-right", label = "Forward",  color = "#30363d", shortcut = "cmd+]" },
+  { icon = "clock",         label = "History",  color = "#30363d", shortcut = "cmd+y" },
+  { icon = "download",      label = "Files",    color = "#1f6feb", shortcut = "cmd+shift+j" },
+  { icon = "eye",           label = "Private",  color = "#6e40c9", shortcut = "cmd+shift+n" },
+  { icon = "bookmark",      label = "Save",     color = "#1a7f37", shortcut = "cmd+d" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+alt+right" }, ccw = { shortcut = "cmd+alt+left" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------- iTerm ---
+[scenes.iterm]
+apps = ["com.googlecode.iterm2", "com.apple.Terminal", "dev.warp.Warp-Stable"]
+
+keys = [
+  { icon = "plus",        label = "Tab",    color = "#1f6feb", shortcut = "cmd+t" },
+  { icon = "columns-2",   label = "Split",  color = "#30363d", shortcut = "cmd+d" },
+  { icon = "rows-2",      label = "Below",  color = "#30363d", shortcut = "cmd+shift+d" },
+  { icon = "eraser",      label = "Clear",  color = "#9a6700", shortcut = "cmd+k" },
+  { icon = "circle-stop", label = "Stop",   color = "#d93025", shortcut = "ctrl+c" },
+  { icon = "search",      label = "Find",   color = "#30363d", shortcut = "cmd+f" },
+
+  { icon = "chevron-left",  label = "Pane",   color = "#30363d", shortcut = "cmd+alt+left" },
+  { icon = "chevron-right", label = "Pane",   color = "#30363d", shortcut = "cmd+alt+right" },
+  { icon = "maximize",      label = "Full",   color = "#30363d", shortcut = "cmd+enter" },
+  { icon = "copy",          label = "Paste",  color = "#1f6feb", shortcut = "cmd+v" },
+  { icon = "settings",      label = "Prefs",  color = "#30363d", shortcut = "cmd+," },
+  { icon = "x",             label = "Close",  color = "#d93025", shortcut = "cmd+w" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+shift+right" }, ccw = { shortcut = "cmd+shift+left" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------ Finder ---
+[scenes.finder]
+apps = ["com.apple.finder"]
+
+keys = [
+  { icon = "folder-plus",  label = "New",     color = "#1f6feb", shortcut = "cmd+shift+n" },
+  { icon = "chevron-right", label = "Go to",  color = "#30363d", shortcut = "cmd+shift+g" },
+  { icon = "info",         label = "Info",    color = "#30363d", shortcut = "cmd+i" },
+  { icon = "eye",          label = "Look",    color = "#30363d", shortcut = "space" },
+  { icon = "search",       label = "Find",    color = "#30363d", shortcut = "cmd+f" },
+  { icon = "trash-2",      label = "Trash",   color = "#d93025", shortcut = "cmd+delete" },
+
+  { icon = "layout-grid",  label = "Icons",   color = "#30363d", shortcut = "cmd+1" },
+  { icon = "list",         label = "List",    color = "#30363d", shortcut = "cmd+2" },
+  { icon = "columns-2",    label = "Columns", color = "#30363d", shortcut = "cmd+3" },
+  { icon = "eye",          label = "Hidden",  color = "#9a6700", shortcut = "cmd+shift+." },
+  { icon = "share-2",      label = "AirDrop", color = "#1f6feb", shortcut = "cmd+shift+r" },
+  { icon = "clipboard-paste", label = "Path", color = "#30363d", shortcut = "cmd+alt+c" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------- Figma ---
+[scenes.figma]
+apps = ["com.figma.Desktop"]
+
+keys = [
+  { icon = "mouse-pointer-2", label = "Move",  color = "#1f6feb", shortcut = "v" },
+  { icon = "crop",         label = "Frame",    color = "#30363d", shortcut = "f" },
+  { icon = "square-dashed-mouse-pointer", label = "Rect", color = "#30363d", shortcut = "r" },
+  { icon = "type",         label = "Text",     color = "#30363d", shortcut = "t" },
+  { icon = "pencil",       label = "Pen",      color = "#6e40c9", shortcut = "p" },
+  { icon = "message-square", label = "Note",   color = "#9a6700", shortcut = "c" },
+
+  { icon = "layers",       label = "Group",    color = "#1f6feb", shortcut = "cmd+g" },
+  { icon = "copy",         label = "Dup",      color = "#30363d", shortcut = "cmd+d" },
+  { icon = "upload",       label = "Export",   color = "#1a7f37", shortcut = "cmd+shift+e" },
+  { icon = "maximize",     label = "Fit",      color = "#30363d", shortcut = "shift+1" },
+  { icon = "zoom-in",      label = "100%",     color = "#30363d", shortcut = "shift+0" },
+  { icon = "undo-2",       label = "Undo",     color = "#9a6700", shortcut = "cmd+z" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+=" }, ccw = { shortcut = "cmd+-" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------- Teams ---
+# Teams moves its shortcuts between versions. If one does nothing, check
+# Settings > Keyboard shortcuts.
+[scenes.teams]
+apps = ["com.microsoft.teams2", "com.microsoft.teams"]
+
+keys = [
+  { icon = "mic-off",        label = "Mute",  color = "#1f6feb", shortcut = "cmd+shift+m" },
+  { icon = "video",          label = "Cam",   color = "#1f6feb", shortcut = "cmd+shift+o" },
+  { icon = "screen-share",   label = "Share", color = "#6e40c9", shortcut = "cmd+shift+e" },
+  { icon = "hand",           label = "Hand",  color = "#9a6700", shortcut = "cmd+shift+k" },
+  { icon = "message-square", label = "Chat",  color = "#30363d", shortcut = "cmd+shift+c" },
+  { icon = "phone-off",      label = "Leave", color = "#d93025", shortcut = "cmd+shift+h", animate = "pulse" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------------- Slack ---
+[scenes.slack]
+apps = ["com.tinyspeck.slackmacgap"]
+
+keys = [
+  { icon = "search",   label = "Jump",     color = "#611f69", shortcut = "cmd+k" },
+  { icon = "bell",     label = "Unread",   color = "#1f6feb", shortcut = "cmd+shift+a" },
+  { icon = "at-sign",  label = "Mentions", color = "#9a6700", shortcut = "cmd+shift+m" },
+  { icon = "message-square", label = "Threads", color = "#30363d", shortcut = "cmd+shift+t" },
+  { icon = "list-todo", label = "Later",   color = "#30363d", shortcut = "cmd+shift+s" },
+  { icon = "check",    label = "Read",     color = "#1a7f37", shortcut = "escape" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "alt+down" }, ccw = { shortcut = "alt+up" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ---------------------------------------------------------------- Telegram ---
+[scenes.telegram]
+apps = ["ru.keepcoder.Telegram"]
+
+keys = [
+  { icon = "search",    label = "Search", color = "#1f6feb", shortcut = "cmd+f" },
+  { icon = "square-pen", label = "New",   color = "#1a7f37", shortcut = "cmd+n" },
+  { icon = "settings",  label = "Prefs",  color = "#30363d", shortcut = "cmd+," },
+  { icon = "x",         label = "Back",   color = "#30363d", shortcut = "escape" },
+  { icon = "camera",    label = "Shot",   color = "#9a6700", shortcut = "cmd+shift+4" },
+  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "general" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "ctrl+tab" }, ccw = { shortcut = "ctrl+shift+tab" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ---------------------------------------------------------------- WhatsApp ---
+[scenes.whatsapp]
+apps = ["net.whatsapp.WhatsApp"]
+
+keys = [
+  { icon = "search",     label = "Search", color = "#1a7f37", shortcut = "cmd+f" },
+  { icon = "square-pen", label = "New",    color = "#1a7f37", shortcut = "cmd+n" },
+  { icon = "settings",   label = "Prefs",  color = "#30363d", shortcut = "cmd+," },
+  { icon = "x",          label = "Back",   color = "#30363d", shortcut = "escape" },
+  { icon = "camera",     label = "Shot",   color = "#9a6700", shortcut = "cmd+shift+4" },
+  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "general" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "ctrl+tab" }, ccw = { shortcut = "ctrl+shift+tab" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# -------------------------------------------------------------------- Mail ---
+[scenes.mail]
+apps = ["com.apple.mail"]
+
+keys = [
+  { icon = "square-pen",     label = "New",    color = "#1f6feb", shortcut = "cmd+n" },
+  { icon = "corner-up-left", label = "Reply",  color = "#1a7f37", shortcut = "cmd+r" },
+  { icon = "users",          label = "All",    color = "#1a7f37", shortcut = "cmd+shift+r" },
+  { icon = "send",           label = "Send",   color = "#6e40c9", shortcut = "cmd+shift+d" },
+  { icon = "inbox",          label = "Unread", color = "#9a6700", shortcut = "cmd+shift+u" },
+  { icon = "trash-2",        label = "Delete", color = "#d93025", shortcut = "delete" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "down" }, ccw = { shortcut = "up" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ---------------------------------------------------------------- Calendar ---
+[scenes.calendar]
+apps = ["com.apple.iCal"]
+
+keys = [
+  { icon = "file-plus",     label = "Event",  color = "#d93025", shortcut = "cmd+n" },
+  { icon = "clock",         label = "Today",  color = "#1f6feb", shortcut = "cmd+t" },
+  { icon = "sun",           label = "Day",    color = "#30363d", shortcut = "cmd+1" },
+  { icon = "columns-2",     label = "Week",   color = "#30363d", shortcut = "cmd+2" },
+  { icon = "calendar-days", label = "Month",  color = "#30363d", shortcut = "cmd+3" },
+  { icon = "layout-grid",   label = "Year",   color = "#30363d", shortcut = "cmd+4" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+right" }, ccw = { shortcut = "cmd+left" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+
+# ------------------------------------------------------------- Luminar Neo ---
+# Only the shortcuts macOS apps share; Luminar's own tool keys differ by
+# version, so add them yourself once you know which you want.
+[scenes.luminar]
+apps = ["com.skylum.luminarneo"]
+
+keys = [
+  { icon = "undo-2",  label = "Undo",   color = "#9a6700", shortcut = "cmd+z" },
+  { icon = "repeat",  label = "Redo",   color = "#9a6700", shortcut = "cmd+shift+z" },
+  { icon = "save",    label = "Save",   color = "#1a7f37", shortcut = "cmd+s" },
+  { icon = "upload",  label = "Export", color = "#6e40c9", shortcut = "cmd+shift+e" },
+  { icon = "copy",    label = "Copy",   color = "#30363d", shortcut = "cmd+c" },
+  { icon = "layout-grid", label = "General", color = "#1f6feb", scene = "general" },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { shortcut = "cmd+=" }, ccw = { shortcut = "cmd+-" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
