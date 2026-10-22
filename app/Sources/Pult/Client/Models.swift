@@ -285,6 +285,17 @@ struct DeckScene: Codable, Equatable {
         try encoder.encodeExtra(extra)
     }
 
+    /// Whether this scene exists only to paint something.
+    ///
+    /// A canvas with no keys is not an application's scene — it is a look you
+    /// switch the dock to. The buttons and knobs do not count: a drawing still
+    /// needs a way back out, so every one of them carries "return to general"
+    /// on a button, and counting that would put all of them back in the wrong
+    /// list.
+    var isJustADrawing: Bool {
+        surface?.isCanvas == true && keys.isEmpty
+    }
+
     /// Pages are implicit: six keys to a page.
     func pages(perPage: Int = 6) -> Int {
         max(1, Int(ceil(Double(keys.count) / Double(perPage))))
@@ -420,6 +431,21 @@ struct Config: Codable, Equatable {
 
     /// Scene names in a stable order, so the sidebar does not shuffle.
     var sceneNames: [String] { scenes.keys.sorted() }
+
+    /// Scenes that drive the keys.
+    ///
+    /// A scene with a drawing *and* keys belongs here: it is an application's
+    /// scene that happens to have a backdrop, and it is edited like one.
+    var keyScenes: [String] {
+        sceneNames.filter { scenes[$0].map { !$0.isJustADrawing } ?? true }
+    }
+
+    /// Scenes that are nothing but a drawing. They have their own pane, and
+    /// listing them beside the applications was asking what a scene called
+    /// "zora" had to do with Chrome and Mail.
+    var drawingScenes: [String] {
+        sceneNames.filter { scenes[$0]?.isJustADrawing ?? false }
+    }
 }
 
 struct DeviceInfo: Codable, Equatable {

@@ -98,7 +98,12 @@ private struct Sidebar: View {
                     state.selectedScene = name
                     state.page = 0
                     state.selection = nil
-                    panel = .scenes
+                    // A drawing has no keys to lay out, so the scene editor
+                    // would open on an empty dock and look broken. Its own
+                    // pane is what you actually wanted.
+                    panel = state.config.scenes[name]?.isJustADrawing == true
+                        ? .animations
+                        : .scenes
                 }
             )) {
                 Section {
@@ -133,11 +138,24 @@ private struct Sidebar: View {
                 }
 
                 Section {
-                    ForEach(state.config.sceneNames, id: \.self) { name in
+                    ForEach(state.config.keyScenes, id: \.self) { name in
                         SceneRow(name: name).tag(name)
                     }
                 } header: {
                     SidebarHeading(T("nav.scenes"))
+                }
+
+                // Drawings are scenes too — you can still bind a key to switch
+                // to one — but they are not about an application, so they are
+                // not listed as though they were.
+                if !state.config.drawingScenes.isEmpty {
+                    Section {
+                        ForEach(state.config.drawingScenes, id: \.self) { name in
+                            SceneRow(name: name).tag(name)
+                        }
+                    } header: {
+                        SidebarHeading(T("nav.animations"))
+                    }
                 }
             }
             .listStyle(.sidebar)

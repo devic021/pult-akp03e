@@ -23,50 +23,69 @@ struct SurfaceSection: View {
         state.catalogue.effect(surface.effect) ?? state.catalogue.effects.first
     }
 
+    /// The effect whose knobs are shown. Only a chosen one: showing the first
+    /// effect's rows under a scene that paints nothing would be a page of
+    /// sliders that change a thing not on screen.
+    private var chosen: EffectInfo? {
+        guard surface.isCanvas, !surface.paintsAFile else { return nil }
+        return state.catalogue.effect(surface.effect)
+    }
+
     var body: some View {
-        Section2(T("section.surface"), symbol: "rectangle.on.rectangle") {
-            ActionCard(
-                T("surface.whole"),
-                symbol: "rectangle.inset.filled",
-                detail: T("surface.whole.says")
-            ) {
-                Toggle("", isOn: Binding(
-                    get: { surface.isCanvas },
-                    set: { whole in
+        VStack(alignment: .leading, spacing: 24) {
+            // The gallery first and always. A pane called Animations that
+            // opens on a switch, and shows no animation until you find and
+            // flip it, is a pane that looks empty — so choosing one *is* the
+            // page, and switching the scene over to a canvas is what choosing
+            // quietly does.
+            Section2(T("section.effect"), symbol: "waveform") {
+                EffectGallery(
+                    width: width,
+                    chosen: surface.paintsAFile ? nil : surface.effect,
+                    choose: { picked in
                         edit { surface in
-                            surface.kind = whole ? "canvas" : "keys"
-                            // A canvas with nothing named paints nothing, and
-                            // the daemon refuses to load it, so switching on
-                            // picks the first effect rather than leaving a
-                            // scene the configuration will not accept.
-                            if whole, surface.effect == nil, !surface.paintsAFile {
-                                surface.effect = state.catalogue.effects.first?.name
-                            }
+                            surface.kind = "canvas"
+                            surface.effect = picked
+                            // A file wins over an effect in the daemon, so
+                            // picking a motion has to let go of the file or
+                            // nothing visible would happen.
+                            surface.source = nil
                         }
                     }
-                ))
-                .labelsHidden()
-                .toggleStyle(.switch)
+                )
             }
 
             if surface.isCanvas {
-                if surface.paintsAFile {
-                    FileCard(name: name, surface: surface, edit: edit)
-                } else {
-                    EffectGallery(
-                        width: width,
-                        chosen: surface.effect,
-                        choose: { chosen in edit { $0.effect = chosen } }
-                    )
+                Section2(T("section.trial"), symbol: "play.rectangle") {
+                    TrialCard(surface: surface)
+                    ActionCard(
+                        T("surface.off"),
+                        symbol: "rectangle.inset.filled",
+                        detail: T("surface.off.says")
+                    ) {
+                        Button(T("surface.off.go")) {
+                            edit { surface in
+                                surface.kind = "keys"
+                                surface.effect = nil
+                                surface.source = nil
+                                surface.values.removeAll()
+                            }
+                        }
+                        .buttonStyle(.pult)
+                    }
                 }
+            }
 
-                TrialCard(surface: surface)
-
-                if let effect, !surface.paintsAFile {
+            if let effect = chosen {
+                Section2(T("section.knobs"), symbol: "slider.horizontal.3") {
                     ForEach(effect.knobs) { knob in
                         KnobRow(knob: knob, effect: effect, surface: surface, edit: edit)
                     }
                 }
+            }
+
+            Section2(T("section.own"), symbol: "photo.on.rectangle.angled") {
+                FileCard(name: name, surface: surface, edit: edit)
             }
         }
         .task(id: state.catalogue.effects.isEmpty) {
@@ -142,7 +161,11 @@ private struct EffectTile: View {
         Button(action: tap) {
             VStack(alignment: .leading, spacing: 8) {
                 DockFilm(film: film)
-                    .frame(height: 76)
+                    // The dock's own proportions: three keys and two seams
+                    // across, two keys and one seam down. Fixing a height
+                    // instead squashed every key into a wide bar, which is
+                    // exactly the lie this tile exists to avoid telling.
+                    .aspectRatio(DockFilm.aspect, contentMode: .fit)
                     .frame(maxWidth: .infinity)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -175,12 +198,19 @@ private struct EffectTile: View {
 /// flatter every effect equally and tell you nothing about the one thing that
 /// separates them on this device.
 struct DockFilm: View {
+    /// Three keys and two seams wide, two keys and one seam tall.
+    static let across: CGFloat = 3 + 2 * 0.26
+    static let down: CGFloat = 2 + 0.26
+    static var aspect: CGFloat { across / down }
+
     let film: Film?
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0 / 15.0)) { timeline in
             Canvas { context, size in
-                let key = size.width / 3.52
+                // Whichever axis runs out first, so the dock keeps its shape
+                // in a tile of any proportion.
+                let key = min(size.width / Self.across, size.height / Self.down)
                 let gap = key * 0.26
                 let width = 3 * key + 2 * gap
                 let height = 2 * key + gap
@@ -467,6 +497,13 @@ private struct FileCard: View {
         panel.allowedContentTypes = [.gif, .png, .jpeg, .webP]
         panel.message = T("surface.file.says")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        edit { $0.source = url.path }
+        edit { surface in
+            surface.kind = "canvas"
+            surface.source = url.path
+            // A source wins over an effect in the daemon; clearing the effect
+            // here means the gallery stops showing one as chosen, which is the
+            // truth about what the dock will paint.
+            surface.effect = nil
+        }
     }
 }

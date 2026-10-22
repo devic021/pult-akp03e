@@ -74,6 +74,13 @@ final class L10n: ObservableObject {
     }
 
     static let en: [String: String] = [
+        "section.effect": "Choose a motion",
+        "section.trial": "On the dock",
+        "section.knobs": "Settings for this motion",
+        "section.own": "Or a file of your own",
+        "surface.off": "Back to six keys",
+        "surface.off.says": "Drops the drawing. The keys keep whatever they are bound to \u{2014} nothing about the bindings changes.",
+        "surface.off.go": "Remove the drawing",
         "nav.animations": "Animations",
         "nav.screensaver": "Screensaver",
         "animations.says": "One drawing across the whole dock instead of six separate pictures. The seams are real \u{2014} about a quarter of a key of plastic between each screen \u{2014} so these are sweeps, fields and fires, never text or photographs.",
@@ -329,6 +336,13 @@ final class L10n: ObservableObject {
     ]
 
     static let sr: [String: String] = [
+        "section.effect": "Izaberi pokret",
+        "section.trial": "Na doku",
+        "section.knobs": "Pode\u{161}avanja ovog pokreta",
+        "section.own": "Ili sopstveni fajl",
+        "surface.off": "Nazad na \u{161}est tastera",
+        "surface.off.says": "Uklanja crte\u{17e}. Tasteri zadr\u{17e}avaju ono \u{161}to im je dodeljeno \u{2014} ni\u{161}ta se o dodelama ne menja.",
+        "surface.off.go": "Ukloni crte\u{17e}",
         "nav.animations": "Animacije",
         "nav.screensaver": "\u{10c}uvar ekrana",
         "animations.says": "Jedan crte\u{17e} preko celog doka umesto \u{161}est odvojenih slika. \u{160}avovi su stvarni \u{2014} oko \u{10d}etvrtine tastera plastike izme\u{111}u svaka dva ekrana \u{2014} pa su ovo preleti, polja i vatre, nikad tekst ni fotografije.",
