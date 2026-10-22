@@ -24,6 +24,11 @@ final class AppState: ObservableObject {
     @Published private(set) var connected = false
     @Published var error: String?
 
+    /// Which pane is open. Held here rather than in the view, because changing
+    /// the language or the text size rebuilds the view tree and would
+    /// otherwise throw you back to the first pane.
+    @Published var panel: Panel = .scenes
+
     @Published var selectedScene: String?
     @Published var page = 0
     @Published var selection: Selection?

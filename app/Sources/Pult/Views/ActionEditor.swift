@@ -34,9 +34,9 @@ struct ActionEditor: View {
                     set: { action.run = $0 }
                 ), prompt: Text("open -a Finder"))
                 .textFieldStyle(.roundedBorder)
-                .font(.callout.monospaced())
+                .font(.appCallout.monospaced())
                 if !compact {
-                    Text(T("action.run.help")).font(.caption).foregroundStyle(.secondary)
+                    Text(T("action.run.help")).font(.appCaption).foregroundStyle(.secondary)
                 }
 
             case .shortcut:
@@ -45,9 +45,9 @@ struct ActionEditor: View {
                     set: { action.shortcut = $0 }
                 ), prompt: Text("cmd+shift+4"))
                 .textFieldStyle(.roundedBorder)
-                .font(.callout.monospaced())
+                .font(.appCallout.monospaced())
                 if !compact {
-                    Text(T("action.shortcut.help")).font(.caption).foregroundStyle(.secondary)
+                    Text(T("action.shortcut.help")).font(.appCaption).foregroundStyle(.secondary)
                 }
 
             case .volume:
@@ -56,7 +56,7 @@ struct ActionEditor: View {
                     set: { action.volume = $0 }
                 ), in: -50...50, step: 1) {
                     Text("\(action.volume ?? 5 > 0 ? "+" : "")\(action.volume ?? 5)")
-                        .font(.callout.monospacedDigit())
+                        .font(.appCallout.monospacedDigit())
                 }
 
             case .scene:
@@ -106,11 +106,11 @@ private struct AppField: View {
                     Text(bundleID.isEmpty ? T("action.app.choose") : bundleID).lineLimit(1)
                 }
                 Spacer()
-                Image(systemName: "chevron.down").font(.caption2)
+                Image(systemName: "chevron.down").font(.appCaption2)
             }
             .contentShape(.rect)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.pult)
         .task { installed.load() }
         .popover(isPresented: $picking, arrowEdge: .leading) {
             AppPickerPopover(chosen: bundleID.isEmpty ? [] : [bundleID]) { app in
@@ -158,7 +158,7 @@ struct ActionRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if !title.isEmpty {
-                Text(title).font(.caption).foregroundStyle(.secondary)
+                Text(title).font(.appCaption).foregroundStyle(.secondary)
             }
             ActionEditor(action: $action, compact: true)
         }

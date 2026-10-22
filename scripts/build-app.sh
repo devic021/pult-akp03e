@@ -34,6 +34,10 @@ touch "$DIST/.metadata_never_index"
 cp app/.build/release/Pult "$APP/Contents/MacOS/Pult"
 cp target/release/pultd "$APP/Contents/MacOS/pultd"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+
+# The interface is set in Inter, registered from here at launch.
+mkdir -p "$APP/Contents/Resources/Fonts"
+cp app/Sources/Pult/Resources/Fonts/*.ttf "$APP/Contents/Resources/Fonts/"
 rm -rf "$ICONSET"
 
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"

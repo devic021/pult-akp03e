@@ -7,6 +7,8 @@ struct PultApp: App {
     @StateObject private var theme = Theme.shared
 
     init() {
+        Typeface.register()
+
         // `Pult --selftest` checks the one thing a screenshot is needed for
         // otherwise: that everything the daemon sends still decodes here. The
         // two sides share a JSON contract and nothing but a run proves it.

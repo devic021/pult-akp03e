@@ -18,17 +18,15 @@ struct RootView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var l10n: L10n
     @EnvironmentObject private var theme: Theme
-    @State private var panel: Panel = .scenes
-
     var body: some View {
         NavigationSplitView {
-            Sidebar(panel: $panel)
+            Sidebar(panel: $state.panel)
                 .navigationSplitViewColumnWidth(min: 210, ideal: 240, max: 330)
         } detail: {
             ZStack {
                 Backdrop()
                 Group {
-                    switch panel {
+                    switch state.panel {
                     case .scenes: SceneEditor()
                     case .device: DeviceView()
                     case .settings: SettingsView()
@@ -38,8 +36,15 @@ struct RootView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar() }
         }
+        // Anything that does not name a font inherits this one, which is how
+        // list rows, menus and button labels follow the text-size setting too.
+        .environment(\.font, .appBody)
         .preferredColorScheme(theme.appearance.colorScheme)
-        .environment(\.dynamicTypeSize, theme.textSize.dynamicTypeSize)
+        // Both the text and its size are resolved by functions rather than by
+        // the environment, so SwiftUI cannot know a view depends on them: the
+        // tree is rebuilt when either changes. Which pane is open lives in
+        // AppState precisely so that it survives this.
+        .id("\(theme.textSize.rawValue)-\(l10n.resolved.rawValue)")
         .alert(T("error.title"), isPresented: .constant(state.error != nil)) {
             Button("OK") { state.error = nil }
         } message: {
@@ -48,30 +53,13 @@ struct RootView: View {
     }
 }
 
-/// Something for the glass to refract. Flat panels on a flat background are
-/// what made the first version look like a form.
+/// The window itself: flat and neutral. A gradient behind everything is what
+/// made the first version read as a poster rather than as an application.
 private struct Backdrop: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        ZStack {
-            Rectangle().fill(.background)
-
-            RadialGradient(
-                colors: [Color.accentColor.opacity(scheme == .dark ? 0.22 : 0.14), .clear],
-                center: .topLeading,
-                startRadius: 10,
-                endRadius: 760
-            )
-
-            RadialGradient(
-                colors: [Color.purple.opacity(scheme == .dark ? 0.16 : 0.09), .clear],
-                center: .bottomTrailing,
-                startRadius: 10,
-                endRadius: 680
-            )
-        }
-        .ignoresSafeArea()
+        Design.window(scheme).ignoresSafeArea()
     }
 }
 
@@ -82,56 +70,69 @@ private struct Sidebar: View {
     @State private var adding = false
 
     var body: some View {
-        List(selection: Binding(
-            get: { state.selectedScene },
-            set: { name in
-                guard let name else { return }
-                state.selectedScene = name
-                state.page = 0
-                state.selection = nil
-                panel = .scenes
-            }
-        )) {
-            Section {
-                ForEach(Panel.allCases) { item in
-                    // A plain tap gesture inside a List loses the first click
-                    // to the list's own selection; a button does not.
-                    Button {
-                        panel = item
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: item.symbol)
-                                .frame(width: 18)
-                                .foregroundStyle(
-                                    panel == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary)
-                                )
-                            Text(item.label)
-                                .fontWeight(panel == item ? .semibold : .regular)
-                            Spacer()
-                        }
-                        .contentShape(.rect)
-                    }
-                    .buttonStyle(.plain)
-                    .listRowBackground(
-                        panel == item
-                            ? AnyView(RoundedRectangle(cornerRadius: 6).fill(.selection))
-                            : AnyView(Color.clear)
-                    )
-                }
-            }
+        VStack(spacing: 0) {
+            Identity()
+            DockCard()
+                .padding(.horizontal, 10)
+                .padding(.bottom, 10)
 
-            Section(T("nav.scenes")) {
-                ForEach(state.config.sceneNames, id: \.self) { name in
-                    SceneRow(name: name).tag(name)
+            List(selection: Binding(
+                get: { state.selectedScene },
+                set: { name in
+                    guard let name else { return }
+                    state.selectedScene = name
+                    state.page = 0
+                    state.selection = nil
+                    panel = .scenes
+                }
+            )) {
+                Section {
+                    ForEach(Panel.allCases) { item in
+                        // A tap gesture inside a List loses the first click to
+                        // the list's own selection; a button does not.
+                        Button {
+                            panel = item
+                        } label: {
+                            HStack(spacing: 9) {
+                                Image(systemName: item.symbol)
+                                    .frame(width: 18)
+                                    .foregroundStyle(
+                                        panel == item ? AnyShapeStyle(Design.accent) : AnyShapeStyle(.secondary)
+                                    )
+                                Text(item.label)
+                                    .font(.appBody.weight(panel == item ? .semibold : .regular))
+                                Spacer()
+                            }
+                            .contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
+                        .listRowBackground(
+                            panel == item
+                                ? AnyView(RoundedRectangle(cornerRadius: 7).fill(Design.pill(.dark)))
+                                : AnyView(Color.clear)
+                        )
+                    }
+                } header: {
+                    SidebarHeading(T("sidebar.setup"))
+                }
+
+                Section {
+                    ForEach(state.config.sceneNames, id: \.self) { name in
+                        SceneRow(name: name).tag(name)
+                    }
+                } header: {
+                    SidebarHeading(T("nav.scenes"))
                 }
             }
+            .listStyle(.sidebar)
+            .scrollContentBackground(.hidden)
         }
-        .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
             VStack(spacing: 8) {
                 if adding {
                     TextField(T("scene.new"), text: $newScene)
                         .textFieldStyle(.roundedBorder)
+                        .font(.appBody)
                         .onSubmit(commit)
                         .onExitCommand { adding = false; newScene = "" }
                 }
@@ -139,9 +140,10 @@ private struct Sidebar: View {
                     if adding { commit() } else { adding = true }
                 } label: {
                     Label(T("scene.new"), systemImage: "plus")
+                        .font(.appBody)
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pult)
             }
             .padding(10)
         }
@@ -155,6 +157,85 @@ private struct Sidebar: View {
     }
 }
 
+/// The app, named and versioned, at the top of the sidebar where the reference
+/// interface puts it: you always know what you are looking at.
+private struct Identity: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            if let icon = NSApp.applicationIconImage {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 7))
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Pult").font(.app(15, weight: .semibold))
+                Text("v\(About.version)")
+                    .font(.appCaption)
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+    }
+}
+
+/// The dock being driven, as a card: what it is, and whether it is answering.
+private struct DockCard: View {
+    @EnvironmentObject private var state: AppState
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Circle().fill(Design.accentSoft)
+                Image(systemName: "dial.medium")
+                    .font(.app(13, weight: .medium))
+                    .foregroundStyle(Design.accent)
+            }
+            .frame(width: 30, height: 30)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(state.status?.device?.kind ?? T("device.disconnected"))
+                    .font(.appCallout.weight(.medium))
+                    .lineLimit(1)
+                if let device = state.status?.device {
+                    Text(device.serial)
+                        .font(.appCaption2.monospaced())
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer()
+
+            Circle()
+                .fill(state.connected ? Design.good : Design.warn)
+                .frame(width: 7, height: 7)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .card(radius: 10)
+        .help(state.connected ? T("help.connected") : T("help.disconnected"))
+    }
+}
+
+/// The small upper-case label above a group of sidebar rows.
+private struct SidebarHeading: View {
+    let title: String
+
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title)
+            .font(.appCaption2.weight(.semibold))
+            .foregroundStyle(.tertiary)
+            .textCase(.uppercase)
+            .tracking(0.6)
+    }
+}
+
 private struct SceneRow: View {
     @EnvironmentObject private var state: AppState
     let name: String
@@ -164,18 +245,18 @@ private struct SceneRow: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Text(name)
+            Text(name).font(.appBody)
             Spacer()
 
             if let scene, scene.pages() > 1 {
                 Text("\(scene.pages())")
-                    .font(.caption2.monospacedDigit())
+                    .font(.appCaption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
                     .help(T("help.page"))
             }
             if name == state.config.defaultScene {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 8))
+                    .font(.app(8))
                     .foregroundStyle(.yellow.opacity(0.8))
                     .help(T("help.default"))
             }
@@ -253,13 +334,13 @@ private struct StatusBar: View {
             }
 
             if let scene = state.status?.scene {
-                Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.quaternary)
+                Image(systemName: "arrow.right").font(.appCaption2).foregroundStyle(.quaternary)
                 HStack(spacing: 5) {
                     Image(systemName: "square.grid.2x2").foregroundStyle(.tint)
                     Text(scene).foregroundStyle(.secondary)
                     if let pages = state.status?.pages, pages > 1 {
                         Text("\((state.status?.page ?? 0) + 1)/\(pages)")
-                            .font(.caption.monospacedDigit())
+                            .font(.appCaption.monospacedDigit())
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -272,10 +353,10 @@ private struct StatusBar: View {
                 Label(T("status.unsaved"), systemImage: "pencil.circle.fill")
                     .foregroundStyle(.orange)
                 Button(T("status.revert")) { state.revert() }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.pult)
                     .help(T("help.revert"))
                 Button(T("status.save")) { state.save() }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.pultProminent)
                     .keyboardShortcut("s")
                     .help(T("help.save"))
             } else {
@@ -283,7 +364,7 @@ private struct StatusBar: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.callout)
+        .font(.appCallout)
         .controlSize(.small)
         .padding(.horizontal, 16)
         .padding(.vertical, 9)

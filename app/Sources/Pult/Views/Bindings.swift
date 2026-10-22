@@ -16,22 +16,22 @@ struct SceneSummary: View {
     var body: some View {
         HStack(spacing: 10) {
             Text(T("hint.device"))
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
 
             Spacer()
 
             Text(counts)
-                .font(.caption.monospacedDigit())
+                .font(.appCaption.monospacedDigit())
                 .foregroundStyle(.tertiary)
 
             Button {
                 showingTable = true
             } label: {
                 Label(T("bindings.open"), systemImage: "list.bullet.rectangle")
-                    .font(.caption)
+                    .font(.appCaption)
             }
-            .buttonStyle(.glass)
+            .buttonStyle(.pult)
             .controlSize(.small)
             .help(T("bindings.title"))
         }
@@ -62,10 +62,10 @@ struct BindingsTable: View {
         VStack(spacing: 0) {
             HStack {
                 Label(T("bindings.title"), systemImage: "list.bullet.rectangle")
-                    .font(.headline)
+                    .font(.appHeadline)
                 Spacer()
                 Button(T("close")) { dismiss() }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.pult)
                     .keyboardShortcut(.cancelAction)
             }
             .padding(16)
@@ -82,7 +82,10 @@ struct BindingsTable: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(width: 560, height: 540)
+        .frame(
+            minWidth: 460, idealWidth: 580, maxWidth: 820,
+            minHeight: 380, idealHeight: 560, maxHeight: 760
+        )
         .background(.ultraThinMaterial)
     }
 
@@ -117,7 +120,7 @@ struct BindingsTable: View {
                     // The knob is named once, with its three bindings under it,
                     // rather than repeated on every line.
                     Text(T("encoder.\(index)"))
-                        .font(.callout.weight(.medium))
+                        .font(.appCallout.weight(.medium))
                         .padding(.top, 2)
 
                     ForEach(parts(of: knob), id: \.0) { part, action in
@@ -185,7 +188,7 @@ struct BindingsTable: View {
         var body: some View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.appCaption.weight(.semibold))
                     .foregroundStyle(.tertiary)
                     .textCase(.uppercase)
                 rows
@@ -203,23 +206,23 @@ struct BindingsTable: View {
             Button(action: reveal) {
                 HStack(spacing: 12) {
                     Text(lead)
-                        .font(.callout.monospacedDigit())
+                        .font(.appCallout.monospacedDigit())
                         .foregroundStyle(.tertiary)
                         .frame(width: 30, alignment: .leading)
 
                     Text(name)
-                        .font(.callout)
-                        .frame(width: 130, alignment: .leading)
+                        .font(.appCallout)
+                        .frame(minWidth: 90, idealWidth: 130, maxWidth: 160, alignment: .leading)
                         .lineLimit(1)
 
                     Text(detail)
-                        .font(.callout)
+                        .font(.appCallout)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
 
                     Spacer()
                     Image(systemName: "chevron.right")
-                        .font(.caption2)
+                        .font(.appCaption2)
                         .foregroundStyle(.quaternary)
                 }
                 .padding(.horizontal, 8)

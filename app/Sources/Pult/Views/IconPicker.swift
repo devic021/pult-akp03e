@@ -50,12 +50,12 @@ struct IconPicker: View {
                     selection = nil
                     dismiss()
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pult)
                 .controlSize(.small)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .glassEffect(in: .capsule)
+            .chip()
 
             ScrollView {
                 LazyVGrid(
@@ -85,9 +85,9 @@ struct IconPicker: View {
 
             HStack(spacing: 4) {
                 Text("\(matches.count)")
-                    .font(.caption.monospacedDigit())
+                    .font(.appCaption.monospacedDigit())
                 Text(T("icon.count"))
-                    .font(.caption)
+                    .font(.appCaption)
                 Spacer()
             }
             .foregroundStyle(.tertiary)

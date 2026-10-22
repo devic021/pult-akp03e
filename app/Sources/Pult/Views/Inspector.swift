@@ -36,10 +36,10 @@ private struct Hint: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: "hand.tap")
-                .font(.system(size: 34, weight: .light))
+                .font(.app(34, weight: .light))
                 .foregroundStyle(.tertiary)
             Text(T("inspector.hint"))
-                .font(.callout)
+                .font(.appCallout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
         }
@@ -110,7 +110,7 @@ private struct KeyEditor: View {
             Label(T("key.clear"), systemImage: "eraser")
                 .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.pult)
         .help(T("help.clear"))
         .padding(.top, 6)
     }
@@ -231,10 +231,10 @@ private struct Header: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(title).font(.title3.weight(.semibold))
+            Text(title).font(.appTitle3.weight(.semibold))
             if let subtitle {
                 Text(subtitle)
-                    .font(.callout.monospacedDigit())
+                    .font(.appCallout.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
             Spacer()
@@ -254,7 +254,7 @@ struct Field<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.caption)
+                .font(.appCaption)
                 .foregroundStyle(.secondary)
             content
         }
@@ -276,11 +276,11 @@ private struct IconField: View {
                 Text(icon ?? T("key.icon.none"))
                     .lineLimit(1)
                 Spacer()
-                Image(systemName: "chevron.down").font(.caption2)
+                Image(systemName: "chevron.down").font(.appCaption2)
             }
             .contentShape(.rect)
         }
-        .buttonStyle(.glass)
+        .buttonStyle(.pult)
         .popover(isPresented: $picking, arrowEdge: .leading) {
             IconPicker(selection: $icon, dismiss: { picking = false })
         }
@@ -306,14 +306,14 @@ private struct ColorField: View {
                 set: { hex = $0.isEmpty ? nil : $0 }
             ), prompt: Text(fallback ?? T("key.auto")))
             .textFieldStyle(.roundedBorder)
-            .font(.callout.monospaced())
-            .frame(minWidth: 70)
+            .font(.appCallout.monospaced())
+            .frame(minWidth: 56)
 
             if hex != nil {
                 Button {
                     hex = nil
                 } label: {
-                    Image(systemName: "arrow.uturn.backward").font(.caption)
+                    Image(systemName: "arrow.uturn.backward").font(.appCaption)
                 }
                 .buttonStyle(.borderless)
                 .help(T("key.auto"))

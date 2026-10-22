@@ -1,32 +1,35 @@
 import SwiftUI
 
-/// The app's surfaces, in one place.
-///
-/// Every panel goes through here rather than styling itself, so the whole
-/// interface can be retuned by editing this file instead of hunting through
-/// views.
+/// Small shared pieces built on the design tokens.
 
 extension View {
-    /// A floating glass panel, the app's standard surface.
-    func glassPanel(cornerRadius: CGFloat = 16, tint: Color? = nil) -> some View {
-        let glass = tint.map { Glass.regular.tint($0.opacity(0.5)) } ?? .regular
-        return self.glassEffect(glass, in: .rect(cornerRadius: cornerRadius))
-    }
-
-    /// A panel that reacts to the pointer, for things you click.
-    func glassTile(cornerRadius: CGFloat = 14, tint: Color? = nil) -> some View {
-        let base = tint.map { Glass.regular.tint($0.opacity(0.6)) } ?? .regular
-        return self.glassEffect(base.interactive(), in: .rect(cornerRadius: cornerRadius))
+    /// A chip or a segmented container: the quiet raised surface, capsule cut.
+    func chip() -> some View {
+        modifier(Chip())
     }
 }
 
-/// A titled block of settings.
+private struct Chip: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content
+            .background(Capsule().fill(Design.surface2(scheme)))
+            .overlay(Capsule().strokeBorder(Design.border(scheme), lineWidth: 1))
+    }
+}
+
+/// A titled block of settings or information.
 struct GlassCard<Content: View>: View {
     var title: String?
     var systemImage: String?
     @ViewBuilder let content: Content
 
-    init(_ title: String? = nil, systemImage: String? = nil, @ViewBuilder content: () -> Content) {
+    init(
+        _ title: String? = nil,
+        systemImage: String? = nil,
+        @ViewBuilder content: () -> Content
+    ) {
         self.title = title
         self.systemImage = systemImage
         self.content = content()
@@ -36,10 +39,10 @@ struct GlassCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             if let title {
                 Label {
-                    Text(title).font(.headline)
+                    Text(title).font(.appHeadline)
                 } icon: {
                     if let systemImage {
-                        Image(systemName: systemImage).foregroundStyle(.tint)
+                        Image(systemName: systemImage).foregroundStyle(Design.accent)
                     }
                 }
             }
@@ -47,7 +50,7 @@ struct GlassCard<Content: View>: View {
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassPanel(cornerRadius: 18)
+        .card()
     }
 }
 
@@ -65,7 +68,7 @@ struct InfoRow: View {
         HStack {
             Text(title).foregroundStyle(.secondary)
             Spacer()
-            Text(value).font(.callout.monospaced())
+            Text(value).font(.appCallout.monospaced())
         }
     }
 }
@@ -77,10 +80,10 @@ struct SectionHeading: View {
 
     var body: some View {
         Label {
-            Text(title).font(.headline)
+            Text(title).font(.appHeadline)
         } icon: {
             if let systemImage {
-                Image(systemName: systemImage).foregroundStyle(.tint)
+                Image(systemName: systemImage).foregroundStyle(Design.accent)
             }
         }
     }

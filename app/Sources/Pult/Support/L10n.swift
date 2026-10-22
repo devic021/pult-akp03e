@@ -111,6 +111,20 @@ final class L10n: ObservableObject {
         "service.log": "Log",
         "service.log.open": "Open log",
         "about.summary": "Pult drives the dock from this Mac: it watches which application is in front and repaints the keys to match. The dock itself stores nothing but its boot logo.",
+        "settings.look": "Look",
+        "settings.behaviour": "Behaviour",
+        "settings.files": "Files and permissions",
+        "settings.config.short": "Configuration",
+        "settings.log.short": "Log",
+        "settings.tab.look": "Appearance",
+        "settings.tab.behaviour": "Behaviour",
+        "settings.tab.service": "Service",
+        "settings.tab.about": "About",
+        "settings.pressFeedback.short": "Light up on press",
+        "settings.poll.short": "App check",
+        "settings.intro": "How the app looks and behaves, and the background service that drives the dock.",
+        "device.intro": "What the dock itself holds. Everything else — scenes, keys, actions — lives on this Mac.",
+        "sidebar.setup": "Setup",
         "nav.scenes": "Scenes",
         "nav.device": "Device",
         "nav.settings": "Settings",
@@ -275,6 +289,20 @@ final class L10n: ObservableObject {
         "service.log": "Log",
         "service.log.open": "Otvori log",
         "about.summary": "Pult vodi dok sa ovog Mac-a: prati koja je aplikacija u fokusu i prefarbava tastere u skladu sa tim. Sam uređaj ne pamti ništa osim logoa pri pokretanju.",
+        "settings.look": "Izgled",
+        "settings.behaviour": "Ponašanje",
+        "settings.files": "Datoteke i dozvole",
+        "settings.config.short": "Konfiguracija",
+        "settings.log.short": "Log",
+        "settings.tab.look": "Izgled",
+        "settings.tab.behaviour": "Ponašanje",
+        "settings.tab.service": "Servis",
+        "settings.tab.about": "O programu",
+        "settings.pressFeedback.short": "Zasvetli pri pritisku",
+        "settings.poll.short": "Provera aplikacije",
+        "settings.intro": "Kako aplikacija izgleda i kako se ponaša, i pozadinski servis koji vodi dok.",
+        "device.intro": "Ono što sam uređaj pamti. Sve ostalo — scene, tasteri, akcije — živi na ovom Mac-u.",
+        "sidebar.setup": "Podešavanje",
         "nav.scenes": "Scene",
         "nav.device": "Uređaj",
         "nav.settings": "Podešavanja",
@@ -430,12 +458,13 @@ enum TextSize: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String { T("text.\(rawValue)") }
 
-    var dynamicTypeSize: DynamicTypeSize {
+    /// What every text size in the app is multiplied by.
+    var scale: CGFloat {
         switch self {
-        case .small: return .small
-        case .normal: return .medium
-        case .large: return .large
-        case .larger: return .xLarge
+        case .small: return 0.88
+        case .normal: return 1.0
+        case .large: return 1.15
+        case .larger: return 1.32
         }
     }
 }
@@ -452,6 +481,9 @@ final class Theme: ObservableObject {
     @Published var textSize: TextSize {
         didSet { UserDefaults.standard.set(textSize.rawValue, forKey: "textSize") }
     }
+
+    /// Read by `Font.app(_:)`, which is why it is on the shared instance.
+    var textScale: CGFloat { textSize.scale }
 
     private init() {
         let defaults = UserDefaults.standard

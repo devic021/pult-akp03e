@@ -6,30 +6,42 @@ import SwiftUI
 /// asks for its art once per page through `prefetch`.
 struct SceneEditor: View {
     @EnvironmentObject private var state: AppState
+    /// The width of the editor pane, measured on the pane itself. Measuring it
+    /// inside the content would make the measurement depend on what it is
+    /// measuring, and the drawing would never shrink.
+    @State private var paneWidth: CGFloat = 0
 
     var body: some View {
         if let name = state.selectedScene, let scene = state.config.scenes[name] {
-            HStack(spacing: 0) {
+            HSplitView {
                 ScrollView {
                     VStack(spacing: 24) {
                         SceneHeader(name: name, scene: scene)
 
-                        VStack(spacing: 10) {
+                        FittedDock(available: paneWidth - 56) {
                             DevicePanel(name: name, scene: scene)
-                            SceneSummary(scene: scene)
-                                .frame(maxWidth: Dock.body.width)
                         }
+
+                        SceneSummary(scene: scene)
+                            .frame(maxWidth: Dock.body.width)
                     }
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
                     .frame(maxWidth: .infinity)
                 }
                 .scrollBounceBehavior(.basedOnSize)
-
-                Divider().ignoresSafeArea()
+                .frame(minWidth: 420)
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear
+                            .onChange(of: geometry.size.width, initial: true) { _, width in
+                                paneWidth = width
+                            }
+                    }
+                }
 
                 Inspector()
-                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
+                    .frame(minWidth: 270, idealWidth: 340, maxWidth: 480)
             }
             .task(id: TaskKey(scene: name, page: state.page, keys: scene.keys)) {
                 state.prefetchCurrentPage()
@@ -44,6 +56,33 @@ struct SceneEditor: View {
         let scene: String
         let page: Int
         let keys: [Key]
+    }
+}
+
+/// Scales the drawing of the dock to whatever width there is.
+///
+/// Its proportions are the hardware's, so it cannot reflow like text; it
+/// shrinks as one piece instead. The second frame matters: `scaleEffect` only
+/// changes what is drawn, not the space the view asks for, so without it the
+/// drawing keeps demanding its full width and pushes the whole page out from
+/// under the sidebar.
+private struct FittedDock<Content: View>: View {
+    /// How much room there is, measured by whoever owns the pane.
+    let available: CGFloat
+    @ViewBuilder let content: Content
+
+    private var factor: CGFloat {
+        guard available > 0 else { return 1 }
+        return min(1, available / Dock.body.width)
+    }
+
+    var body: some View {
+        content
+            .frame(width: Dock.body.width, height: Dock.body.height)
+            .scaleEffect(factor, anchor: .topLeading)
+            // `scaleEffect` only changes what is drawn, not the space the view
+            // asks for, so the scaled size has to be stated again here.
+            .frame(width: Dock.body.width * factor, height: Dock.body.height * factor)
     }
 }
 
@@ -62,7 +101,7 @@ private struct SceneHeader: View {
                 if renaming {
                     TextField("", text: $draft)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 24, weight: .semibold))
+                        .font(.app(24, weight: .semibold))
                         .frame(maxWidth: 320)
                         .onSubmit {
                             state.renameScene(name, to: draft)
@@ -74,11 +113,11 @@ private struct SceneHeader: View {
                         state.renameScene(name, to: draft)
                         renaming = false
                     }
-                    .buttonStyle(.glassProminent)
+                    .buttonStyle(.pultProminent)
                     .controlSize(.small)
                 } else {
                     Text(name)
-                        .font(.system(size: 28, weight: .semibold))
+                        .font(.app(28, weight: .semibold))
 
                     Button {
                         draft = name
@@ -86,7 +125,7 @@ private struct SceneHeader: View {
                     } label: {
                         Image(systemName: "pencil")
                     }
-                    .buttonStyle(.glass)
+                    .buttonStyle(.pult)
                     .controlSize(.small)
                     .help(T("scene.rename"))
                 }
@@ -110,7 +149,7 @@ private struct SceneHeader: View {
                     Label(T("scene.page.add"), systemImage: "plus.rectangle.on.rectangle")
                         .frame(height: headerControlHeight - 10)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pult)
                 .help(T("help.page"))
 
                 Button {
@@ -119,7 +158,7 @@ private struct SceneHeader: View {
                     Label(T("scene.show"), systemImage: "play.fill")
                         .frame(height: headerControlHeight - 10)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pult)
                 .help(T("help.showScene"))
             }
 
@@ -143,7 +182,7 @@ private struct PagePicker: View {
                     state.selection = nil
                 } label: {
                     Text("\(index + 1)")
-                        .font(.callout.weight(.medium))
+                        .font(.appCallout.weight(.medium))
                         // The whole chip is the target, not the digit: aiming
                         // at a numeral is not a way to turn a page.
                         .frame(minWidth: 30, maxHeight: .infinity)
@@ -162,7 +201,7 @@ private struct PagePicker: View {
         }
         .padding(3)
         .frame(height: headerControlHeight)
-        .glassEffect(in: .capsule)
+        .chip()
     }
 }
 
@@ -179,7 +218,7 @@ private struct AppChips: View {
             HStack(spacing: 6) {
                 Image(systemName: "arrow.right.circle").foregroundStyle(.tint)
                 Text(T("scene.apps.intro"))
-                    .font(.subheadline)
+                    .font(.appSubheadline)
                     .foregroundStyle(.secondary)
             }
 
@@ -194,9 +233,11 @@ private struct AppChips: View {
                     adding = true
                 } label: {
                     Label(T("scene.apps.add"), systemImage: "plus")
-                        .font(.callout)
+                        .font(.appCallout)
+                        .padding(.horizontal, 4)
+                        .frame(height: chipHeight - 8)
                 }
-                .buttonStyle(.glass)
+                .buttonStyle(.pult)
                 .controlSize(.small)
                 .help(T("help.apps"))
                 .popover(isPresented: $adding, arrowEdge: .bottom) {
@@ -213,7 +254,7 @@ private struct AppChips: View {
 
             if apps.isEmpty && name != state.config.defaultScene {
                 Text(T("scene.apps.none"))
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.orange)
             }
         }

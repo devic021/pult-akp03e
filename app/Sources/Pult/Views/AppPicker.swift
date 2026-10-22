@@ -26,7 +26,7 @@ struct AppPickerPopover: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .glassEffect(in: .capsule)
+            .chip()
 
             ScrollView {
                 LazyVStack(spacing: 2) {
@@ -41,7 +41,7 @@ struct AppPickerPopover: View {
                                 VStack(alignment: .leading, spacing: 0) {
                                     Text(app.name).lineLimit(1)
                                     Text(app.bundleID)
-                                        .font(.caption2)
+                                        .font(.appCaption2)
                                         .foregroundStyle(.tertiary)
                                         .lineLimit(1)
                                 }
@@ -68,6 +68,10 @@ struct AppPickerPopover: View {
         .task { installed.load() }
     }
 }
+
+/// Height shared by the application chips and the button that adds one, so the
+/// row reads as one row.
+let chipHeight: CGFloat = 26
 
 /// An application shown as itself: its icon and its name, with the bundle ID
 /// kept for the tooltip. A row of reverse-DNS strings tells you nothing.
@@ -97,23 +101,23 @@ struct AppChip: View {
                     .frame(width: 16, height: 16)
             } else {
                 Image(systemName: "app.dashed")
-                    .font(.caption)
+                    .font(.appCaption)
                     .foregroundStyle(.tertiary)
             }
 
-            Text(name).font(.callout).lineLimit(1)
+            Text(name).font(.appCallout).lineLimit(1)
 
             if let onRemove {
                 Button(action: onRemove) {
-                    Image(systemName: "xmark").font(.system(size: 9, weight: .bold))
+                    Image(systemName: "xmark").font(.app(9, weight: .bold))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.tertiary)
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .glassEffect(in: .capsule)
+        .frame(height: chipHeight)
+        .chip()
         .help(bundleID)
         .task { installed.load() }
     }

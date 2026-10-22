@@ -13,12 +13,13 @@ use resvg::usvg;
 use crate::config::{Animation, Key};
 use crate::icons;
 
-/// Fonts to try when the config names none. All ship with macOS.
-const FONT_CANDIDATES: &[&str] = &[
-    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
-    "/System/Library/Fonts/Supplemental/Arial.ttf",
-    "/System/Library/Fonts/Geneva.ttf",
-];
+/// The face key labels are drawn in, carried in the binary.
+///
+/// Inter (SIL Open Font License, see `assets/fonts/LICENSE`): drawn for
+/// interfaces, legible at the size a 60 px key allows, and with the whole of
+/// Latin Extended-A, which the Serbian alphabet needs. Embedding it also means
+/// the dock looks the same whatever fonts a Mac happens to have, and that the
+/// keys and the app share a typeface.
 
 /// Label sizes to try, largest first; the first that fits in two lines wins.
 const LABEL_SIZES: &[f32] = &[18.0, 16.0, 14.0, 12.0, 11.0, 10.0, 9.0];
@@ -68,12 +69,10 @@ impl Renderer {
                     .with_context(|| format!("reading font {}", path.display()))?;
                 (path.display().to_string(), bytes)
             }
-            None => FONT_CANDIDATES
-                .iter()
-                .find_map(|c| std::fs::read(c).ok().map(|b| ((*c).to_string(), b)))
-                .ok_or_else(|| {
-                    anyhow!("no usable system font found; set `font` in the config")
-                })?,
+            None => (
+                "Inter-SemiBold (bundled)".to_string(),
+                include_bytes!("../assets/fonts/Inter-SemiBold.ttf").to_vec(),
+            ),
         };
 
         let font = FontVec::try_from_vec(bytes).with_context(|| format!("parsing font {path}"))?;
