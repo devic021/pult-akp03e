@@ -6,48 +6,43 @@ import SwiftUI
 /// asks for its art once per page through `prefetch`.
 struct SceneEditor: View {
     @EnvironmentObject private var state: AppState
-    /// The width of the editor pane, measured on the pane itself. Measuring it
-    /// inside the content would make the measurement depend on what it is
-    /// measuring, and the drawing would never shrink.
-    @State private var paneWidth: CGFloat = 0
+
+    /// Below this, the inspector stops being a column and becomes a sheet:
+    /// two panes in 400 points is two unusable panes.
+    private static let inspectorThreshold: CGFloat = 820
 
     var body: some View {
         if let name = state.selectedScene, let scene = state.config.scenes[name] {
-            HSplitView {
-                ScrollView {
-                    VStack(spacing: 24) {
-                        SceneHeader(name: name, scene: scene)
+            // One reader decides every width. Measuring inside a split view
+            // made the measurement depend on the content being measured, which
+            // is why the drawing kept overflowing the pane it was sized from.
+            GeometryReader { geometry in
+                let showsInspector = geometry.size.width >= Self.inspectorThreshold
+                let inspectorWidth = showsInspector
+                    ? min(380, max(280, geometry.size.width * 0.28))
+                    : 0
+                let editorWidth = geometry.size.width - inspectorWidth
 
-                        FittedDock(available: paneWidth - 56) {
-                            DevicePanel(name: name, scene: scene)
-                        }
+                HStack(spacing: 0) {
+                    Editor(name: name, scene: scene, width: editorWidth)
+                        .frame(width: editorWidth)
 
-                        SceneSummary(scene: scene)
-                            .frame(maxWidth: Dock.body.width)
-                    }
-                    .padding(.horizontal, 28)
-                    .padding(.vertical, 24)
-                    .frame(maxWidth: .infinity)
-                }
-                .scrollBounceBehavior(.basedOnSize)
-                .frame(minWidth: 420)
-                .background {
-                    GeometryReader { geometry in
-                        Color.clear
-                            .onChange(of: geometry.size.width, initial: true) { _, width in
-                                paneWidth = width
-                            }
+                    if showsInspector {
+                        Divider()
+                        Inspector()
+                            .frame(width: inspectorWidth)
                     }
                 }
-
-                Inspector()
-                    .frame(minWidth: 270, idealWidth: 340, maxWidth: 480)
+                .sheet(isPresented: .constant(!showsInspector && state.selection != nil)) {
+                    NarrowInspector()
+                }
             }
             .task(id: TaskKey(scene: name, page: state.page, keys: scene.keys)) {
                 state.prefetchCurrentPage()
             }
         } else {
-            ContentUnavailableView(T("nav.scenes"), systemImage: "square.grid.2x2")
+            EmptyState(symbol: "square.grid.2x2", title: T("nav.scenes"))
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -56,6 +51,60 @@ struct SceneEditor: View {
         let scene: String
         let page: Int
         let keys: [Key]
+    }
+}
+
+/// The editor pane. Every child is bounded by the width handed down, so
+/// nothing can push the page out from under the sidebar.
+private struct Editor: View {
+    let name: String
+    let scene: DeckScene
+    let width: CGFloat
+
+    private var content: CGFloat { max(260, width - 56) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                SceneHeader(name: name, scene: scene, width: content)
+
+                // The dock and the line under it stay centred at every scale:
+                // it is a picture of a thing on a desk, not a paragraph.
+                VStack(spacing: 10) {
+                    FittedDock(available: content) {
+                        DevicePanel(name: name, scene: scene)
+                    }
+
+                    SceneSummary(scene: scene)
+                        .frame(width: min(content, Dock.body.width))
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .padding(28)
+            .frame(width: width, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+    }
+}
+
+/// The inspector as a sheet, for windows too narrow to hold a second column.
+private struct NarrowInspector: View {
+    @EnvironmentObject private var state: AppState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(T("close")) { state.selection = nil }
+                    .buttonStyle(.pult)
+                    .keyboardShortcut(.cancelAction)
+            }
+            .padding(12)
+
+            Divider()
+            Inspector()
+        }
+        .frame(width: 380, height: 560)
     }
 }
 
@@ -82,7 +131,13 @@ private struct FittedDock<Content: View>: View {
             .scaleEffect(factor, anchor: .topLeading)
             // `scaleEffect` only changes what is drawn, not the space the view
             // asks for, so the scaled size has to be stated again here.
-            .frame(width: Dock.body.width * factor, height: Dock.body.height * factor)
+            // Aligned, not centred: the scale runs from the top-leading corner,
+            // so a centred box would let the drawing ride up over the row above.
+            .frame(
+                width: Dock.body.width * factor,
+                height: Dock.body.height * factor,
+                alignment: .topLeading
+            )
     }
 }
 
@@ -92,82 +147,103 @@ private struct SceneHeader: View {
     @EnvironmentObject private var state: AppState
     let name: String
     let scene: DeckScene
+    let width: CGFloat
     @State private var renaming = false
     @State private var draft = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 10) {
-                if renaming {
-                    TextField("", text: $draft)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.app(24, weight: .semibold))
-                        .frame(maxWidth: 320)
-                        .onSubmit {
-                            state.renameScene(name, to: draft)
-                            renaming = false
-                        }
-                        .onExitCommand { renaming = false }
-
-                    Button(T("status.save")) {
-                        state.renameScene(name, to: draft)
-                        renaming = false
-                    }
-                    .buttonStyle(.pultProminent)
-                    .controlSize(.small)
-                } else {
-                    Text(name)
-                        .font(.app(28, weight: .semibold))
-
-                    Button {
-                        draft = name
-                        renaming = true
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                    .buttonStyle(.pult)
-                    .controlSize(.small)
-                    .help(T("scene.rename"))
+            // Wide enough and it is one row; narrow and the controls drop to a
+            // row of their own rather than squeezing the title into "gene ral".
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: 10) {
+                    title
+                    Spacer(minLength: 16)
+                    controls
                 }
+                .frame(width: width, alignment: .leading)
 
-                if name == state.config.defaultScene {
-                    Label(T("scene.isDefault"), systemImage: "star.fill")
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.yellow)
-                        .help(T("help.default"))
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) { title; Spacer(minLength: 0) }
+                    HStack(spacing: 8) { controls; Spacer(minLength: 0) }
                 }
-
-                Spacer()
-
-                if state.pages > 1 {
-                    PagePicker()
-                }
-
-                Button {
-                    state.addPage()
-                } label: {
-                    Label(T("scene.page.add"), systemImage: "plus.rectangle.on.rectangle")
-                        .frame(height: headerControlHeight - 10)
-                }
-                .buttonStyle(.pult)
-                .help(T("help.page"))
-
-                Button {
-                    state.show(scene: name)
-                } label: {
-                    Label(T("scene.show"), systemImage: "play.fill")
-                        .frame(height: headerControlHeight - 10)
-                }
-                .buttonStyle(.pult)
-                .help(T("help.showScene"))
+                .frame(width: width, alignment: .leading)
             }
 
             AppChips(name: name, apps: scene.apps)
+                .frame(width: width, alignment: .leading)
         }
+    }
+
+    @ViewBuilder
+    private var title: some View {
+        if renaming {
+            TextField("", text: $draft)
+                .textFieldStyle(.roundedBorder)
+                .font(.app(22, weight: .semibold))
+                .frame(maxWidth: 280)
+                .onSubmit {
+                    state.renameScene(name, to: draft)
+                    renaming = false
+                }
+                .onExitCommand { renaming = false }
+        } else {
+            HStack(spacing: 10) {
+                Badge(symbol: "square.grid.2x2", size: 34)
+                Text(name)
+                    .font(.app(26, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+
+                Button {
+                    draft = name
+                    renaming = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.pult)
+                .controlSize(.small)
+                .help(T("scene.rename"))
+
+                if name == state.config.defaultScene {
+                    Image(systemName: "star.fill")
+                        .font(.app(11))
+                        .foregroundStyle(.yellow)
+                        .help(T("help.default"))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var controls: some View {
+        if state.pages > 1 {
+            PagePicker()
+        }
+
+        Button {
+            state.addPage()
+        } label: {
+            Label(T("scene.page.add"), systemImage: "plus.rectangle.on.rectangle")
+                .font(.appCallout)
+                .fixedSize()
+        }
+        .buttonStyle(.pult)
+        .help(T("help.page"))
+
+        Button {
+            state.show(scene: name)
+        } label: {
+            Label(T("scene.show"), systemImage: "play.fill")
+                .font(.appCallout)
+                .fixedSize()
+        }
+        .buttonStyle(.pult)
+        .help(T("help.showScene"))
     }
 }
 
-/// Height every control in the scene's header shares, so they line up.
+/// Height the page chips share with the buttons beside them.
 private let headerControlHeight: CGFloat = 28
 
 private struct PagePicker: View {
