@@ -1,16 +1,54 @@
-# akp03-deck
+# Pult
 
-Per-application scene switching for the **Ajazz AKP03E** stream dock on macOS.
+A macOS controller for the **Ajazz AKP03E** stream dock. The six keys repaint
+themselves when you switch applications, and the whole dock can become one
+moving picture instead of six separate ones.
 
-Point it at a config, leave it running: when you switch apps, the six keys
-repaint and the encoders rebind. The dock stores nothing — every scene lives
-here and is pushed over HID.
+![The animation gallery](assets/readme/animations.png)
 
 ```
-macOS frontmost app  →  bundle ID  →  scene  →  6 × JPEG 60×60 + action table
+macOS frontmost app  →  bundle ID  →  scene  →  6 × JPEG 60×60 + an action table
 ```
 
-## Hardware
+The dock stores nothing but its boot logo. Every scene lives on your Mac and is
+pushed over HID, so nothing is lost when it is unplugged and nothing has to be
+synchronised.
+
+## Install
+
+Download the disk image from [Releases](../../releases), drag Pult into
+Applications and open it. The first screen starts the background service and
+points at the one permission that has to be granted by hand.
+
+Keys bound to a keystroke need **System Settings › Privacy & Security ›
+Accessibility** (called *Device Control and Data Access* on macOS 27). Tick
+`pultd` there — the daemon, not the app: the app does not press keys, the
+daemon does. Keys bound to `run` or `volume` work without it.
+
+## What it does
+
+**Scenes.** One per application, matched on bundle ID. Six keys with a label, an
+icon and an action; three plain buttons; three encoders, each with a twist in
+either direction and a press of its own. More than six tools? Bind a knob to
+turn pages.
+
+**Animations.** A scene can paint across the whole dock instead of six separate
+pictures. Ten built-in motions, or a file of your own — a GIF, an animated PNG
+or WebP, a folder of numbered frames, or one still picture.
+
+**A screensaver.** When nobody has touched the Mac for a while the dock stops
+being a controller and becomes something to look at, cycling through a playlist
+of animations and dissolving between them. Nothing in Pult keeps the Mac awake;
+it asks to paint one last frame before sleep and then lets go.
+
+**Both languages.** English and Serbian, switched live, along with a text size
+that scales the whole interface.
+
+![The scene editor](assets/readme/scenes.png)
+
+*The scene editor, here in Serbian.*
+
+## The hardware
 
 | | |
 |---|---|
@@ -30,180 +68,109 @@ Indices, confirmed by pressing every control on the hardware:
              (round, no display)   (small knobs, bottom)
 ```
 
-Each encoder reports a twist in either direction and a press of its own.
+Measured on the wire: one key is 1.2 ms, all six plus a flush is 5.2 ms. At 15
+frames a second a full-dock animation spends about 8% of the dock's time
+receiving pictures, and well under 1% of a core drawing them.
 
-## Build and run
+## Animations, and the seams
 
-```sh
-cargo build --release
-./target/release/akp03-deck            # writes a starter config on first run
-./target/release/akp03-deck my.toml    # or name one
-```
+Six 60×60 screens with plastic between them are not a 180×120 image. The gaps
+are real — about a quarter of a key — so a canvas is larger than the sum of its
+keys, and each key is a window cut out of it.
 
-First run creates `~/.config/akp03-deck/config.toml` from
-[`config.example.toml`](config.example.toml). Edits are picked up while it runs;
-a config that fails to parse is reported and the running one is kept.
+![Every effect, with the real seams drawn in](assets/readme/effects.png)
 
-## Permissions
+*Every effect as the dock really shows it, bezels included.*
 
-Nothing is needed to drive the dock, and nothing is needed to see which app is
-in front. The one exception is `shortcut` actions: sending a keystroke needs
-**System Settings > Privacy & Security > Accessibility**.
+Which geometry is right depends on what is being drawn:
 
-On startup the daemon checks whether it is trusted and, if not, asks macOS to
-show its own dialog — the app named there is the one to tick, which is not
-necessarily this binary (see above). `run` and `volume` actions work without
-any of this.
+* **Physical** — 212×136, true geometry. A circle stays round and a diagonal
+  stays straight, at the cost that a travelling front disappears for the width
+  of each bezel. Right for rings, orbits and anything with a shape.
+* **Packed** — 180×120, gaps ignored. A front crosses at constant apparent
+  speed and never stalls. Right for sweeps and meters.
 
-Two things that bite:
+Static text and photographs belong on neither: a letter cut by 16 px of plastic
+is a letter gone.
 
-* An **unsigned** binary is trusted by its contents, so every rebuild looks
-  like a different program and the grant quietly stops applying.
-  [`scripts/sign.sh`](scripts/sign.sh) signs it with a local certificate it
-  creates once, which makes the grant stick across rebuilds.
-  `scripts/install.sh` runs it for you.
-* Granting it to a terminal or editor hands that app control of the whole
-  machine. Running as a login agent keeps the grant on `akp03-deck` alone.
-
-On macOS 27 this list is **System Settings > Privacy & Security > Device
-Control and Data Access**; it was called Accessibility before.
+Every effect is a pure function of `(phase, seed)`. Phase is an accumulator the
+daemon advances by `dt × speed`, which is why moving the speed slider changes
+how fast the picture moves and never where it is. Each effect also declares the
+settings it honours and the range it will accept, and the editor builds its
+controls from that — so a slider can never outlive the thing it drives, and a
+new effect grows the gallery with no change to the app.
 
 ## Configuration
 
-```toml
-brightness = 70        # 0-100
-poll_ms = 300          # how often to ask which app is in front
-default = "general"    # scene when no other scene claims the app
+Everything the interface does is a file at `~/.config/pult/config.toml`, written
+from [`config.example.toml`](config.example.toml) on first run and documented in
+place. It is picked up while the daemon runs; a file that fails to parse is
+reported and the running one is kept.
 
-[scenes.browser]
-apps = ["com.google.Chrome", "com.apple.Safari"]   # trailing * matches a prefix
+The file and the app are interchangeable in both directions. Anything the app
+does not understand — a key from a newer build, a table added by hand — survives
+a save untouched rather than being quietly dropped.
 
-keys = [                                            # six, in reading order
-  { label = "New tab", color = "#1f6feb", shortcut = "cmd+t" },
-  { label = "Close",   color = "#d93025", shortcut = "cmd+w" },
-]
+## Build from source
 
-buttons = [ { run = "open -a Finder" } ]            # the three without displays
-
-encoders = [                                        # left to right
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
-]
-```
-
-A key carries at most one action:
-
-| | |
-|---|---|
-| `run = "shell command"` | runs it detached |
-| `shortcut = "cmd+shift+4"` | sends a keystroke (needs Accessibility) |
-| `volume = -5` | changes output volume by that many points |
-| `scene = "other"` | switches scene by hand, until the frontmost app changes |
-| `page = "next"` | turns to another page of the same scene (`next`, `prev`, `first`) |
-
-### Pages
-
-A scene may list more keys than the dock has. They are shown a page at a time,
-and anything bound to `page` turns them; paging wraps around, so a knob never
-hits a dead stop. The page resets whenever the scene changes, so an app always
-comes up on its first page.
-
-With more than one page, every key carries a hairline along its top edge split
-into one segment per page, the current one lit. Putting it on all six keys
-rather than one means it reads as a single strip across the dock, and it cannot
-land on a key that a short last page leaves empty.
-
-The shipped configuration gives every scene the same knobs, so the habit
-carries between apps:
-
-| | |
-|---|---|
-| small left | page through the scene, press for page one |
-| big | whatever that app's main dial should be — timeline, tabs, messages |
-| small right | output volume, press to mute |
-
-Key art is `label`, `color` (`#RGB` or `#RRGGBB`), `text_color` (defaults to
-whichever of black/white reads better), `icon`, `icon_color` and `animate`.
-Labels shrink and wrap on their own.
-
-### Icons
-
-`icon` takes the name of a bundled icon, or a path to an SVG or image of your
-own. The bundled set is [Lucide](https://lucide.dev) (ISC, see
-`assets/icons/LICENSE`), compiled into the binary so the daemon does not depend
-on where it was installed from. SVGs are recoloured to `icon_color` and
-rasterised at the key's own resolution, so they stay sharp.
-
-An icon name that is neither bundled nor a file fails at config load, with the
-full list of bundled names in the error.
-
-### Animation
-
-`animate` gives a key movement while its scene is showing:
-
-| | |
-|---|---|
-| `pulse` | the icon breathes — draws the eye without nagging |
-| `spin` | the icon turns — for anything that means "working" |
-| `blink` | the background flashes — for "live" or "careful" |
-
-Frames go out at 15 fps, and only keys that actually move are redrawn. A dock
-with nothing animated sends nothing at all: the clock only runs when there is
-something to show. Measured on the hardware, one key costs 1.2 ms to send and
-a full six-key repaint 5.2 ms, so a moving scene uses a few percent of what the
-device can take. `cargo run --release --bin bench` re-measures it.
-
-Pressing a key lights it briefly, which is independent of `animate` and can be
-turned off with `press_feedback = false`.
-
-Find an app's bundle ID:
+Rust and a Swift toolchain, both from the usual places.
 
 ```sh
-lsappinfo info -only bundleid "$(lsappinfo front)"
+./scripts/build-app.sh     # daemon + app + icon, bundled and signed
+./scripts/install.sh       # the above, into /Applications, as a login agent
+./scripts/make-dmg.sh      # a disk image you can hand to someone
+./scripts/notarize.sh      # submit it to Apple and staple the ticket
 ```
 
-## Tools
+`build-app.sh` signs with a **Developer ID Application** certificate when the
+machine has one, and with a locally generated certificate when it does not. The
+local path is enough for your own Mac and keeps the Accessibility grant stable
+across rebuilds, but no other Mac will accept it — for that it has to be signed
+with a Developer ID *and* notarised, which is what `notarize.sh` does.
+
+Tools, most of them useful without a dock attached:
 
 ```sh
-cargo run --bin preview -- chrome:2 out.png   # render a scene's page to a PNG, no dock needed
+cargo run --bin sheet                        # every effect, with real seams, to a PNG
+cargo run --bin preview -- chrome:2 out.png  # one scene's page, to a PNG
 cargo run --bin bench                        # how fast the dock accepts images
-cargo run --bin probe                        # print geometry, then watch key/encoder events
+cargo run --bin probe                        # geometry, then live key and encoder events
 cargo run --bin probe -- --raw               # hex dump of raw HID input
 cargo run --bin opentest                     # which HID interface can be opened
 ```
 
-## Running it in the background
+## Why a daemon and an app
 
-```sh
-scripts/install.sh
-```
+Only one process may hold the device, so the two are separate and talk over a
+line-delimited JSON socket at
+`~/Library/Application Support/Pult/control.sock`. The daemon owns the HID
+connection and nothing else touches it.
 
-That builds it, copies the binary to `~/.local/bin`, installs the config if
-there is none, and loads `launchd/dev.akp03-deck.plist` as a login agent. Logs
-land in `~/Library/Logs/akp03-deck.log`.
-
-```sh
-launchctl kickstart -k gui/$(id -u)/dev.akp03-deck   # restart it
-launchctl bootout gui/$(id -u)/dev.akp03-deck        # stop it
-```
-
-Run it under `launchd` rather than from a terminal if you use `shortcut` keys.
-macOS grants Accessibility to the process it holds *responsible*, which for
-anything started from a terminal is the terminal — or the editor behind it. As
-a login agent the binary is responsible for itself, so the permission lands on
-`akp03-deck` and stays there.
+The split is also what makes the permission work. macOS attaches the right to
+send keystrokes to the *responsible* process, which for anything started from a
+terminal is the terminal — or the editor behind it. As a login agent the daemon
+answers for itself, so the grant lands on `pultd` and stays there.
 
 ## Two things worth knowing
 
 **Why the frontmost app is read with `lsappinfo`.** The obvious call,
 `NSWorkspace.frontmostApplication`, goes stale in a background process. That is
 the root cause of app-based profile switching not working on macOS in OpenDeck
-(issue #455, closed as *not planned*) and its upstream library
+(issue #455, closed as *not planned*) and in its upstream library
 (`active-win-pos-rs` #49, still open). `lsappinfo` asks the launch services
-daemon instead, stays correct from the background, and needs no permissions.
+daemon instead, stays correct from the background, and needs no permission.
 
 **Why `vendor/ajazz-sdk` exists.** The dock exposes its vendor pipe *and* a
-plain keyboard under one VID/PID/serial. `ajazz-sdk` connects by serial, so it
-can land on the keyboard interface, which macOS refuses without Input
+plain keyboard under one VID/PID/serial. The upstream SDK connects by serial, so
+it can land on the keyboard interface, which macOS refuses without Input
 Monitoring — `connect()` fails with `(0xE00002C1) privilege violation`. The
-vendored copy adds one function, `Ajazz::connect_path`, so we open the vendor
-pipe by path. See [`vendor/ajazz-sdk/PATCHES.md`](vendor/ajazz-sdk/PATCHES.md).
+vendored copy adds one function, `Ajazz::connect_path`, so the vendor pipe is
+opened by path. See [`vendor/ajazz-sdk/PATCHES.md`](vendor/ajazz-sdk/PATCHES.md).
+
+## Licence
+
+MIT — see [LICENSE](LICENSE).
+
+Pult vendors a patched Ajazz SDK under MPL-2.0 and bundles the Lucide icon set
+and the Inter typeface. [THIRD-PARTY.md](THIRD-PARTY.md) names all of them,
+their terms, and what was changed.

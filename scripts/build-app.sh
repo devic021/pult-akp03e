@@ -18,7 +18,6 @@ APP="$DIST/Pult.app"
 # the permission grant stable across rebuilds, but no other Mac will accept it.
 #
 # PULT_IDENTITY overrides the search, for a machine with more than one.
-TEAM_ID="${PULT_TEAM:-LR6MN4V96N}"
 LOCAL_CERT="akp03-deck local signing"
 
 if [ -n "${PULT_IDENTITY:-}" ]; then

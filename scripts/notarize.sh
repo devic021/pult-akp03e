@@ -14,7 +14,7 @@
 #
 #     xcrun notarytool store-credentials pult \
 #         --apple-id <your Apple ID> \
-#         --team-id LR6MN4V96N \
+#         --team-id <your team id> \
 #         --password <app-specific password>
 #
 # The password is not your Apple ID password: make one at
