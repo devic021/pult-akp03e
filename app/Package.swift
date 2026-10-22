@@ -3,7 +3,8 @@ import PackageDescription
 
 let package = Package(
     name: "Pult",
-    platforms: [.macOS(.v14)],
+    // Liquid Glass is a macOS 26 API, and the look is the point.
+    platforms: [.macOS("26.0")],
     targets: [
         .executableTarget(
             name: "Pult",

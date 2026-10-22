@@ -71,7 +71,7 @@ final class L10n: ObservableObject {
         "key.color": "Background",
         "key.textColor": "Label colour",
         "key.iconColor": "Icon colour",
-        "key.animate": "Animation",
+        "key.animate": "KeyAnimation",
         "key.animate.none": "None",
         "key.animate.pulse": "Pulse",
         "key.animate.spin": "Spin",
@@ -129,7 +129,7 @@ final class L10n: ObservableObject {
         "status.connected": "Connected",
         "status.disconnected": "Daemon not running",
         "status.front": "In front",
-        "status.scene": "Scene",
+        "status.scene": "DeckScene",
         "status.unsaved": "Unsaved changes",
         "status.save": "Save",
         "status.revert": "Revert",
@@ -142,7 +142,7 @@ final class L10n: ObservableObject {
 
     static let sr: [String: String] = [
         "app.name": "Pult",
-        "nav.scenes": "Scene",
+        "nav.scenes": "DeckScene",
         "nav.device": "Uređaj",
         "nav.settings": "Podešavanja",
         "nav.about": "O programu",

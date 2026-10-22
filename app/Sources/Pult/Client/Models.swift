@@ -51,7 +51,7 @@ enum PageTurn: String, Codable, CaseIterable, Identifiable {
     var label: String { T("action.page.\(rawValue)") }
 }
 
-enum Animation: String, Codable, CaseIterable, Identifiable {
+enum KeyAnimation: String, Codable, CaseIterable, Identifiable {
     case pulse, spin, blink
     var id: String { rawValue }
     var label: String { T("key.animate.\(rawValue)") }
@@ -65,7 +65,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var text_color: String?
     var icon: String?
     var icon_color: String?
-    var animate: Animation?
+    var animate: KeyAnimation?
 
     // Flattened in the daemon's JSON, so they sit beside the art here too.
     var run: String?
@@ -95,17 +95,17 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     }
 }
 
-struct Encoder: Codable, Equatable, Hashable {
+struct Knob: Codable, Equatable, Hashable {
     var cw = Action()
     var ccw = Action()
     var press = Action()
 }
 
-struct Scene: Codable, Equatable {
+struct DeckScene: Codable, Equatable {
     var apps: [String] = []
     var keys: [Key] = []
     var buttons: [Action] = []
-    var encoders: [Encoder] = []
+    var encoders: [Knob] = []
 
     /// Pages are implicit: six keys to a page.
     func pages(perPage: Int = 6) -> Int {
@@ -119,14 +119,14 @@ struct Config: Codable, Equatable {
     var press_feedback: Bool = true
     var font: String?
     var defaultScene: String = "general"
-    var scenes: [String: Scene] = [:]
+    var scenes: [String: DeckScene] = [:]
 
     enum CodingKeys: String, CodingKey {
         case brightness, poll_ms, press_feedback, font, scenes
         case defaultScene = "default"
     }
 
-    /// Scene names in a stable order, so the sidebar does not shuffle.
+    /// DeckScene names in a stable order, so the sidebar does not shuffle.
     var sceneNames: [String] { scenes.keys.sorted() }
 }
 
