@@ -9,7 +9,29 @@ set -eu
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
 APP="$DIST/Pult.app"
-CERT_NAME="akp03-deck local signing"
+# Which certificate to sign with.
+#
+# A Developer ID Application certificate is what lets another Mac open this
+# without being told to; it also has to be paired with the hardened runtime and
+# a secure timestamp, or notarisation refuses the submission. Without one we
+# fall back to the local certificate, which is enough for this Mac and keeps
+# the permission grant stable across rebuilds, but no other Mac will accept it.
+#
+# PULT_IDENTITY overrides the search, for a machine with more than one.
+TEAM_ID="${PULT_TEAM:-LR6MN4V96N}"
+LOCAL_CERT="akp03-deck local signing"
+
+if [ -n "${PULT_IDENTITY:-}" ]; then
+	CERT_NAME="$PULT_IDENTITY"
+	RELEASE=1
+elif security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+	CERT_NAME="$(security find-identity -v -p codesigning \
+		| grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+	RELEASE=1
+else
+	CERT_NAME="$LOCAL_CERT"
+	RELEASE=0
+fi
 
 cd "$ROOT"
 echo "==> daemon"
@@ -88,15 +110,43 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> signing"
-# The daemon is signed with its own identifier: that identifier is half of the
+echo "==> signing as: $CERT_NAME"
+# The hardened runtime and a secure timestamp are what notarisation requires;
+# neither is any use without a Developer ID, and the timestamp needs the
+# network, so a local build does without both.
+#
+# No entitlements file. The daemon talks to a HID device and posts key events,
+# and neither needs one: this is not sandboxed, so device access is open, and
+# pressing keys is governed by the Accessibility grant rather than by an
+# entitlement. Asking for entitlements it does not need would only widen what
+# the signature claims.
+if [ "$RELEASE" = "1" ]; then
+	SIGN_FLAGS="--options runtime --timestamp"
+else
+	SIGN_FLAGS=""
+fi
+
+# Inside out: a nested binary signed after its container invalidates the
+# container's seal.
+# The daemon carries its own identifier: that identifier is half of the
 # requirement macOS remembers when you allow it to send keystrokes.
-codesign --force --sign "$CERT_NAME" --identifier dev.pult.daemon \
+codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.daemon \
 	"$APP/Contents/MacOS/pultd"
-codesign --force --sign "$CERT_NAME" --identifier dev.pult.Pult \
+codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.Pult \
 	"$APP/Contents/MacOS/Pult"
-codesign --force --sign "$CERT_NAME" --identifier dev.pult.Pult "$APP"
+codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.Pult "$APP"
 codesign --verify --deep --verbose=1 "$APP"
+
+if [ "$RELEASE" = "1" ]; then
+	echo
+	echo "signed for distribution; now have it notarised:"
+	echo "    scripts/notarize.sh"
+	echo
+	echo "NOTE: the signature changed, so the permission macOS remembers no"
+	echo "longer applies. Tick pultd once more under System Settings >"
+	echo "Privacy & Security > Device Control and Data Access. It then holds"
+	echo "for every later build signed with the same certificate."
+fi
 
 echo
 echo "built $APP"
