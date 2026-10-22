@@ -80,7 +80,9 @@ struct DeviceView: View {
         panel.allowedContentTypes = [.png, .jpeg]
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        logoMessage = state.writeBootLogo(url) ? T("device.bootLogo.written") : state.error
+        state.writeBootLogo(url) { failure in
+            logoMessage = failure ?? T("device.bootLogo.written")
+        }
     }
 }
 

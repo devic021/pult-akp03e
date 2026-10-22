@@ -66,6 +66,20 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Pult</string>
+
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>dev.pult.keyslot</string>
+			<key>UTTypeDescription</key>
+			<string>Pult key</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
 PLIST

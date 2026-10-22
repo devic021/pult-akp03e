@@ -26,15 +26,45 @@ const SIZES: &[(u32, &str)] = &[
 ];
 
 fn mark() -> String {
+    // Apple's macOS icon geometry: the artwork sits in an 824 pt rounded square
+    // centred on a 1024 canvas, leaving the margin the system expects. Drawing
+    // edge to edge is what makes a hand-made icon look wrong next to the rest
+    // of the Dock.
+    const INSET: f32 = 100.0;
+    const BOX: f32 = 824.0;
+    const RADIUS: f32 = 185.0;
+
+    // Six keys, 2x3, filling the middle of the square. Generous corners, wide
+    // gaps: the shape has to survive being 16 px wide.
+    const KEY: f32 = 188.0;
+    const GAP: f32 = 26.0;
+    const KEY_RADIUS: f32 = 48.0;
+
+    let grid_width = 3.0 * KEY + 2.0 * GAP;
+    let grid_height = 2.0 * KEY + GAP;
+    let origin_x = 512.0 - grid_width / 2.0;
+    let origin_y = 512.0 - grid_height / 2.0;
+
     let mut keys = String::new();
     for row in 0..2 {
         for col in 0..3 {
-            let x = 168 + col * 232;
-            let y = 268 + row * 232;
-            // One key carries the accent, the way one scene is always active.
-            let fill = if row == 0 && col == 1 { "#4c8dff" } else { "#2f3540" };
+            let x = origin_x + col as f32 * (KEY + GAP);
+            let y = origin_y + row as f32 * (KEY + GAP);
+            // One key is lit, the way one scene is always the active one.
+            let lit = row == 0 && col == 1;
+            if lit {
+                // The glow is what says "live" rather than "another grid of
+                // squares"; a radial gradient rather than a blur filter, which
+                // not every renderer handles the same way.
+                let cx = x + KEY / 2.0;
+                let cy = y + KEY / 2.0;
+                keys.push_str(&format!(
+                    r#"<circle cx="{cx:.1}" cy="{cy:.1}" r="210" fill="url(#glow)"/>"#
+                ));
+            }
+            let fill = if lit { "#ffffff" } else { "rgba(255,255,255,0.24)" };
             keys.push_str(&format!(
-                r#"<rect x="{x}" y="{y}" width="184" height="184" rx="44" fill="{fill}"/>"#
+                r#"<rect x="{x:.1}" y="{y:.1}" width="{KEY}" height="{KEY}" rx="{KEY_RADIUS}" fill="{fill}"/>"#
             ));
         }
     }
@@ -42,19 +72,39 @@ fn mark() -> String {
     format!(
         r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#20242c"/>
-      <stop offset="1" stop-color="#121419"/>
+    <linearGradient id="face" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#5b6cff"/>
+      <stop offset="0.52" stop-color="#3b49d6"/>
+      <stop offset="1" stop-color="#1b2060"/>
     </linearGradient>
+    <radialGradient id="glow">
+      <stop offset="0" stop-color="#cfe0ff" stop-opacity="0.55"/>
+      <stop offset="0.45" stop-color="#9fb8ff" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="face-clip">
+      <rect x="{INSET}" y="{INSET}" width="{BOX}" height="{BOX}" rx="{RADIUS}"/>
+    </clipPath>
   </defs>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#body)"/>
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="none"
-        stroke="#3a4150" stroke-width="8"/>
-  {keys}
-  <circle cx="760" cy="384" r="104" fill="#2f3540" stroke="#4a5262" stroke-width="10"/>
-  <circle cx="760" cy="384" r="34" fill="#4a5262"/>
-  <circle cx="704" cy="640" r="52" fill="#2f3540" stroke="#4a5262" stroke-width="8"/>
-  <circle cx="824" cy="640" r="52" fill="#2f3540" stroke="#4a5262" stroke-width="8"/>
+
+  <rect x="{INSET}" y="{INSET}" width="{BOX}" height="{BOX}" rx="{RADIUS}" fill="url(#face)"/>
+
+  <g clip-path="url(#face-clip)">
+    <!-- A light falling across the top, which is what makes glass read as glass. -->
+    <ellipse cx="420" cy="140" rx="700" ry="430" fill="url(#sheen)"/>
+  </g>
+
+  <g clip-path="url(#face-clip)">
+    {keys}
+  </g>
+
+  <rect x="{INSET}" y="{INSET}" width="{BOX}" height="{BOX}" rx="{RADIUS}"
+        fill="none" stroke="#ffffff" stroke-opacity="0.18" stroke-width="3"/>
 </svg>"##
     )
 }

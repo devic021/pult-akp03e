@@ -658,6 +658,55 @@ fn serve(
             Ok(false)
         }
 
+        Request::RenderKeys { keys, size, pages } => {
+            let size = size.map_or_else(|| state.renderer.size(), |s| (s, s));
+            let renderer = Renderer::new(state.config.font.as_deref(), size)?;
+            let frame = Frame {
+                pages,
+                ..Frame::default()
+            };
+
+            let mut pngs = Vec::with_capacity(keys.len());
+            for key in &keys {
+                match renderer
+                    .key_frame(key, frame)
+                    .and_then(|image| encode_png(&image))
+                {
+                    Ok(png) => pngs.push(serde_json::Value::String(png)),
+                    // One unrenderable key must not cost the whole page.
+                    Err(_) => pngs.push(serde_json::Value::Null),
+                }
+            }
+
+            reply.ok(json!({ "pngs": pngs }));
+            Ok(false)
+        }
+
+        Request::IconSheet { size, color } => {
+            let size = size.unwrap_or(64);
+            let renderer = Renderer::new(state.config.font.as_deref(), (size, size))?;
+            let color = color.unwrap_or_else(|| "#f5f5f5".to_string());
+
+            let mut sheet = serde_json::Map::new();
+            for name in pult::icons::names() {
+                let key = Key {
+                    icon: Some(name.to_string()),
+                    icon_color: Some(color.clone()),
+                    color: Some("#1c1f26".to_string()),
+                    ..Key::default()
+                };
+                if let Ok(png) = renderer
+                    .key_frame(&key, Frame::default())
+                    .and_then(|image| encode_png(&image))
+                {
+                    sheet.insert(name.to_string(), serde_json::Value::String(png));
+                }
+            }
+
+            reply.ok(json!({ "icons": sheet }));
+            Ok(false)
+        }
+
         Request::Preview { scene, page: want } => {
             let Some(found_scene) = state.config.scene(&scene) else {
                 reply.fail(format!("no scene named {scene:?}"));

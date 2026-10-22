@@ -21,25 +21,44 @@ enum Language: String, CaseIterable, Identifiable {
 /// Adding a string means adding one line to each table below; nothing else in
 /// the app needs to change. Missing keys fall back to English and then to the
 /// key itself, so a half-translated build still runs.
+///
+/// The resolved language and its table are held, not recomputed: `T()` is
+/// called dozens of times per view body, and asking Foundation for the user's
+/// preferred languages that often is enough to make a window resize stutter.
 final class L10n: ObservableObject {
     static let shared = L10n()
 
-    @AppStorage("language") var language: Language = .system {
-        willSet { objectWillChange.send() }
+    @Published private(set) var resolved: Language = .en
+    private var table: [String: String] = L10n.en
+
+    var language: Language {
+        get { Language(rawValue: UserDefaults.standard.string(forKey: "language") ?? "") ?? .system }
+        set {
+            guard newValue != language else { return }
+            UserDefaults.standard.set(newValue.rawValue, forKey: "language")
+            adopt(newValue)
+        }
     }
 
-    /// The language actually used, once `system` is resolved.
-    var resolved: Language {
-        if language != .system { return language }
-        let preferred = Locale.preferredLanguages.first ?? "en"
-        return preferred.hasPrefix("sr") || preferred.hasPrefix("hr") || preferred.hasPrefix("bs")
-            ? .sr
-            : .en
+    private init() {
+        adopt(language)
+    }
+
+    private func adopt(_ language: Language) {
+        let resolved: Language
+        if language == .system {
+            let preferred = Locale.preferredLanguages.first ?? "en"
+            resolved = ["sr", "hr", "bs"].contains(where: preferred.hasPrefix) ? .sr : .en
+        } else {
+            resolved = language
+        }
+
+        table = resolved == .sr ? Self.sr : Self.en
+        self.resolved = resolved
     }
 
     func callAsFunction(_ key: String) -> String {
-        let table = resolved == .sr ? Self.sr : Self.en
-        return table[key] ?? Self.en[key] ?? key
+        table[key] ?? Self.en[key] ?? key
     }
 
     static let en: [String: String] = [
@@ -58,6 +77,9 @@ final class L10n: ObservableObject {
         "scene.default": "Default scene",
         "scene.isDefault": "Shown when no scene claims the app in front",
         "scene.keys": "Keys",
+        "scene.show": "Show on the dock",
+        "key.title": "Key",
+        "inspector.hint": "Pick a key, a knob or a button on the dock to edit it",
         "scene.page": "Page",
         "scene.page.add": "Add page",
         "scene.encoders": "Knobs",
@@ -71,7 +93,7 @@ final class L10n: ObservableObject {
         "key.color": "Background",
         "key.textColor": "Label colour",
         "key.iconColor": "Icon colour",
-        "key.animate": "KeyAnimation",
+        "key.animate": "Animation",
         "key.animate.none": "None",
         "key.animate.pulse": "Pulse",
         "key.animate.spin": "Spin",
@@ -115,6 +137,10 @@ final class L10n: ObservableObject {
         "device.disconnected": "Dock not connected",
 
         "settings.language": "Language",
+        "settings.theme": "Appearance",
+        "theme.system": "System",
+        "theme.light": "Light",
+        "theme.dark": "Dark",
         "settings.pressFeedback": "Light keys up when pressed",
         "settings.poll": "App check interval",
         "settings.poll.help": "How often to ask macOS which app is in front",
@@ -129,7 +155,7 @@ final class L10n: ObservableObject {
         "status.connected": "Connected",
         "status.disconnected": "Daemon not running",
         "status.front": "In front",
-        "status.scene": "DeckScene",
+        "status.scene": "Scene",
         "status.unsaved": "Unsaved changes",
         "status.save": "Save",
         "status.revert": "Revert",
@@ -142,7 +168,7 @@ final class L10n: ObservableObject {
 
     static let sr: [String: String] = [
         "app.name": "Pult",
-        "nav.scenes": "DeckScene",
+        "nav.scenes": "Scene",
         "nav.device": "Uređaj",
         "nav.settings": "Podešavanja",
         "nav.about": "O programu",
@@ -156,6 +182,9 @@ final class L10n: ObservableObject {
         "scene.default": "Podrazumevana scena",
         "scene.isDefault": "Prikazuje se kad nijedna scena ne preuzme aplikaciju u fokusu",
         "scene.keys": "Tasteri",
+        "scene.show": "Prikaži na doku",
+        "key.title": "Taster",
+        "inspector.hint": "Izaberi taster, točak ili dugme na doku da ga podesiš",
         "scene.page": "Strana",
         "scene.page.add": "Dodaj stranu",
         "scene.encoders": "Točkovi",
@@ -213,6 +242,10 @@ final class L10n: ObservableObject {
         "device.disconnected": "Uređaj nije povezan",
 
         "settings.language": "Jezik",
+        "settings.theme": "Izgled",
+        "theme.system": "Sistemski",
+        "theme.light": "Svetlo",
+        "theme.dark": "Tamno",
         "settings.pressFeedback": "Zasvetli taster pri pritisku",
         "settings.poll": "Provera aplikacije",
         "settings.poll.help": "Koliko često se pita macOS koja je aplikacija u fokusu",
@@ -237,6 +270,50 @@ final class L10n: ObservableObject {
         "menu.quit": "Izađi",
         "error.title": "Nešto nije u redu",
     ]
+}
+
+extension L10n {
+    var languageBinding: Binding<Language> {
+        Binding(get: { self.language }, set: { self.language = $0 })
+    }
+}
+
+/// How the app follows, or overrides, the system's appearance.
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+    var label: String { T("theme.\(rawValue)") }
+    var symbol: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+/// The app's own settings, the ones that are about this window rather than
+/// about the dock, and so do not belong in the daemon's configuration file.
+final class Theme: ObservableObject {
+    static let shared = Theme()
+
+    @Published var appearance: Appearance {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
+    }
+
+    private init() {
+        let stored = UserDefaults.standard.string(forKey: "appearance") ?? ""
+        appearance = Appearance(rawValue: stored) ?? .system
+    }
 }
 
 /// Short alias, so views read as text rather than lookups.

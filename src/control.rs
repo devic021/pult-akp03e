@@ -51,6 +51,18 @@ pub enum Request {
         size: Option<u32>,
         pages: Option<(usize, usize)>,
     },
+    /// Several keys in one call. The editor redraws a whole page at once, and
+    /// one round trip per key turns a resize into a stutter.
+    RenderKeys {
+        keys: Vec<crate::config::Key>,
+        size: Option<u32>,
+        pages: Option<(usize, usize)>,
+    },
+    /// Every bundled icon rendered at one size, for the icon picker.
+    IconSheet {
+        size: Option<u32>,
+        color: Option<String>,
+    },
     /// A scene's page, rendered exactly as the dock would show it.
     Preview {
         scene: String,

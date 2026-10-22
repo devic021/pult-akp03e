@@ -2,6 +2,7 @@ import SwiftUI
 
 enum Panel: String, CaseIterable, Identifiable {
     case scenes, device, settings
+
     var id: String { rawValue }
     var label: String { T("nav.\(rawValue)") }
     var symbol: String {
@@ -16,33 +17,29 @@ enum Panel: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var l10n: L10n
-    @State private var section: Panel = .scenes
+    @EnvironmentObject private var theme: Theme
+    @State private var panel: Panel = .scenes
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(section: $section)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
+            Sidebar(panel: $panel)
+                .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 300)
         } detail: {
-            Group {
-                switch section {
-                case .scenes: SceneEditor()
-                case .device: DeviceView()
-                case .settings: SettingsView()
+            ZStack {
+                Backdrop()
+                Group {
+                    switch panel {
+                    case .scenes: SceneEditor()
+                    case .device: DeviceView()
+                    case .settings: SettingsView()
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background {
-                // The window's own backdrop, so glass has something to refract.
-                LinearGradient(
-                    colors: [Color(nsColor: .windowBackgroundColor), Color(nsColor: .underPageBackgroundColor)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-                .ignoresSafeArea()
-            }
             .safeAreaInset(edge: .bottom, spacing: 0) { StatusBar() }
         }
-        .alert(T("error.title"), isPresented: .constant(state.error != nil && !state.connected)) {
+        .preferredColorScheme(theme.appearance.colorScheme)
+        .alert(T("error.title"), isPresented: .constant(state.error != nil)) {
             Button("OK") { state.error = nil }
         } message: {
             Text(state.error ?? "")
@@ -50,58 +47,97 @@ struct RootView: View {
     }
 }
 
-/// Sections on top, scenes underneath, so the list is one column rather than
-/// a tab bar plus a list.
+/// Something for the glass to refract. Flat panels on a flat background are
+/// what made the first version look like a form.
+private struct Backdrop: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            Rectangle().fill(.background)
+
+            RadialGradient(
+                colors: [Color.accentColor.opacity(scheme == .dark ? 0.22 : 0.14), .clear],
+                center: .topLeading,
+                startRadius: 10,
+                endRadius: 760
+            )
+
+            RadialGradient(
+                colors: [Color.purple.opacity(scheme == .dark ? 0.16 : 0.09), .clear],
+                center: .bottomTrailing,
+                startRadius: 10,
+                endRadius: 680
+            )
+        }
+        .ignoresSafeArea()
+    }
+}
+
 private struct Sidebar: View {
     @EnvironmentObject private var state: AppState
-    @Binding var section: Panel
+    @Binding var panel: Panel
     @State private var newScene = ""
     @State private var adding = false
 
     var body: some View {
         List(selection: Binding(
             get: { state.selectedScene },
-            set: { if let value = $0 { state.selectedScene = value; state.page = 0; section = .scenes } }
+            set: { name in
+                guard let name else { return }
+                state.selectedScene = name
+                state.page = 0
+                state.selection = nil
+                panel = .scenes
+            }
         )) {
             Section {
                 ForEach(Panel.allCases) { item in
-                    Label(item.label, systemImage: item.symbol)
-                        .foregroundStyle(section == item ? Color.accentColor : .primary)
-                        .contentShape(.rect)
-                        .onTapGesture { section = item }
+                    HStack(spacing: 8) {
+                        Image(systemName: item.symbol)
+                            .frame(width: 18)
+                            .foregroundStyle(panel == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                        Text(item.label)
+                            .fontWeight(panel == item ? .semibold : .regular)
+                        Spacer()
+                    }
+                    .contentShape(.rect)
+                    .onTapGesture { panel = item }
                 }
             }
 
             Section(T("nav.scenes")) {
                 ForEach(state.config.sceneNames, id: \.self) { name in
-                    SceneRow(name: name)
-                        .tag(name)
+                    SceneRow(name: name).tag(name)
                 }
             }
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .bottom) {
-            VStack(spacing: 6) {
+            VStack(spacing: 8) {
                 if adding {
                     TextField(T("scene.new"), text: $newScene)
                         .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            state.addScene(named: newScene.trimmingCharacters(in: .whitespaces))
-                            newScene = ""
-                            adding = false
-                            section = .scenes
-                        }
+                        .onSubmit(commit)
+                        .onExitCommand { adding = false; newScene = "" }
                 }
                 Button {
-                    adding.toggle()
+                    if adding { commit() } else { adding = true }
                 } label: {
                     Label(T("scene.new"), systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.glass)
             }
-            .padding(8)
+            .padding(10)
         }
+    }
+
+    private func commit() {
+        state.addScene(named: newScene.trimmingCharacters(in: .whitespaces))
+        newScene = ""
+        adding = false
+        panel = .scenes
     }
 }
 
@@ -109,23 +145,30 @@ private struct SceneRow: View {
     @EnvironmentObject private var state: AppState
     let name: String
 
+    private var scene: DeckScene? { state.config.scenes[name] }
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
             Text(name)
             Spacer()
-            if name == state.config.defaultScene {
-                Image(systemName: "star.fill")
-                    .font(.caption2)
+            if let scene, scene.pages() > 1 {
+                Text("\(scene.pages())")
+                    .font(.caption2.monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
+            if name == state.config.defaultScene {
+                Image(systemName: "star.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.yellow.opacity(0.8))
+            }
             if state.status?.scene == name {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 7, height: 7)
+                Circle().fill(.green).frame(width: 7, height: 7)
             }
         }
         .contextMenu {
             Button(T("scene.default")) { state.config.defaultScene = name }
+            Button(T("scene.show")) { state.show(scene: name) }
+            Divider()
             Button(T("scene.delete"), role: .destructive) { state.deleteScene(name) }
                 .disabled(name == state.config.defaultScene)
         }
@@ -138,7 +181,7 @@ private struct StatusBar: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             Circle()
                 .fill(state.connected ? Color.green : Color.secondary)
                 .frame(width: 8, height: 8)
@@ -146,16 +189,19 @@ private struct StatusBar: View {
                 .foregroundStyle(.secondary)
 
             if let device = state.status?.device {
-                Text("· \(device.kind)").foregroundStyle(.tertiary)
+                Text("·").foregroundStyle(.quaternary)
+                Text(device.kind).foregroundStyle(.tertiary)
             }
             if let app = state.status?.app {
-                Text("· \(app)").foregroundStyle(.tertiary).lineLimit(1)
+                Text("·").foregroundStyle(.quaternary)
+                Text(app).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
             }
 
             Spacer()
 
             if state.dirty {
-                Text(T("status.unsaved")).foregroundStyle(.orange)
+                Label(T("status.unsaved"), systemImage: "pencil.circle.fill")
+                    .foregroundStyle(.orange)
                 Button(T("status.revert")) { state.revert() }
                     .buttonStyle(.glass)
                 Button(T("status.save")) { state.save() }
@@ -167,8 +213,9 @@ private struct StatusBar: View {
             }
         }
         .font(.callout)
+        .controlSize(.small)
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 9)
         .background(.ultraThinMaterial)
     }
 }

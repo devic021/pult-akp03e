@@ -3,14 +3,27 @@ import SwiftUI
 struct SettingsView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var l10n: L10n
+    @EnvironmentObject private var theme: Theme
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 Text(T("nav.settings")).font(.largeTitle.weight(.semibold))
 
+                GlassCard(T("settings.theme"), systemImage: "paintbrush") {
+                    Picker("", selection: $theme.appearance) {
+                        ForEach(Appearance.allCases) { appearance in
+                            Label(appearance.label, systemImage: appearance.symbol)
+                                .tag(appearance)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(maxWidth: 320)
+                }
+
                 GlassCard(T("settings.language"), systemImage: "globe") {
-                    Picker("", selection: $l10n.language) {
+                    Picker("", selection: l10n.languageBinding) {
                         ForEach(Language.allCases) { language in
                             Text(language.label).tag(language)
                         }

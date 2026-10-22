@@ -4,6 +4,7 @@ import SwiftUI
 struct PultApp: App {
     @StateObject private var state = AppState()
     @StateObject private var l10n = L10n.shared
+    @StateObject private var theme = Theme.shared
 
     init() {
         // `Pult --selftest` checks the one thing a screenshot is needed for
@@ -19,8 +20,12 @@ struct PultApp: App {
             RootView()
                 .environmentObject(state)
                 .environmentObject(l10n)
-                .frame(minWidth: 1040, minHeight: 660)
-                .task { state.start() }
+                .environmentObject(theme)
+                .frame(minWidth: 1000, minHeight: 640)
+                .task {
+                    state.start()
+                    state.watchRunningApps()
+                }
         }
         .windowToolbarStyle(.unified)
         .defaultSize(width: 1180, height: 760)
@@ -29,6 +34,7 @@ struct PultApp: App {
             MenuContent()
                 .environmentObject(state)
                 .environmentObject(l10n)
+                .environmentObject(theme)
         }
     }
 }
