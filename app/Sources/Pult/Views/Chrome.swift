@@ -99,6 +99,43 @@ struct EmptyState: View {
     }
 }
 
+/// A titled group of rows, run down the page one after another.
+///
+/// Sections replace the tabs that were here: a page you scroll is one thing to
+/// read, where tabs are four things to find.
+struct Section2<Content: View>: View {
+    let title: String
+    var symbol: String?
+    @ViewBuilder let content: Content
+
+    init(_ title: String, symbol: String? = nil, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.symbol = symbol
+        self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                if let symbol {
+                    Image(systemName: symbol)
+                        .font(.appCaption)
+                        .foregroundStyle(.tertiary)
+                }
+                Text(title)
+                    .font(.appCaption.weight(.semibold))
+                    .foregroundStyle(.tertiary)
+                    .textCase(.uppercase)
+                    .tracking(0.6)
+            }
+            .padding(.leading, 2)
+
+            VStack(spacing: 10) { content }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 /// A card that explains itself: icon, title, a line of what it is for, and its
 /// action on the right where the eye ends up.
 struct ActionCard<Content: View>: View {
