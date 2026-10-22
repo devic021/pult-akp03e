@@ -27,6 +27,9 @@ mkdir -p "$ICONSET"
 echo "==> bundle"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+# Without this the build output shows up in Spotlight and Launchpad as a
+# second copy of the app, next to the one in /Applications.
+touch "$DIST/.metadata_never_index"
 
 cp app/.build/release/Pult "$APP/Contents/MacOS/Pult"
 cp target/release/pultd "$APP/Contents/MacOS/pultd"

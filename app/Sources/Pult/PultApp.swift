@@ -5,6 +5,15 @@ struct PultApp: App {
     @StateObject private var state = AppState()
     @StateObject private var l10n = L10n.shared
 
+    init() {
+        // `Pult --selftest` checks the one thing a screenshot is needed for
+        // otherwise: that everything the daemon sends still decodes here. The
+        // two sides share a JSON contract and nothing but a run proves it.
+        if CommandLine.arguments.contains("--selftest") {
+            SelfTest.run()
+        }
+    }
+
     var body: some Scene {
         Window(T("app.name"), id: "main") {
             RootView()

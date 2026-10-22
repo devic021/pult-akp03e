@@ -2,6 +2,11 @@ import Foundation
 
 /// Mirrors of what the daemon sends. The daemon owns the file format; the app
 /// never parses TOML, it exchanges JSON and lets the daemon write the file.
+///
+/// Decoding is deliberately forgiving. The daemon leaves out anything empty so
+/// the file it writes stays readable, and Swift's synthesised decoder does not
+/// fall back to a property's default value for a missing key — it throws. Every
+/// type below therefore decodes by hand, treating absence as the default.
 
 struct Action: Codable, Equatable, Hashable {
     var run: String?
@@ -31,7 +36,7 @@ struct Action: Codable, Equatable, Hashable {
     }
 
     /// Switches to another kind of action, dropping the old one: a key can
-    /// only carry one, and leaving a stale field would be saved to the file.
+    /// only carry one, and a leftover field would be written to the file.
     mutating func become(_ kind: Kind) {
         run = nil; shortcut = nil; scene = nil; volume = nil; page = nil
         switch kind {
@@ -79,6 +84,37 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         case run, shortcut, scene, volume, page
     }
 
+    init(
+        label: String = "",
+        color: String? = nil,
+        text_color: String? = nil,
+        icon: String? = nil,
+        icon_color: String? = nil,
+        animate: KeyAnimation? = nil
+    ) {
+        self.label = label
+        self.color = color
+        self.text_color = text_color
+        self.icon = icon
+        self.icon_color = icon_color
+        self.animate = animate
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        label = try values.decodeIfPresent(String.self, forKey: .label) ?? ""
+        color = try values.decodeIfPresent(String.self, forKey: .color)
+        text_color = try values.decodeIfPresent(String.self, forKey: .text_color)
+        icon = try values.decodeIfPresent(String.self, forKey: .icon)
+        icon_color = try values.decodeIfPresent(String.self, forKey: .icon_color)
+        animate = try values.decodeIfPresent(KeyAnimation.self, forKey: .animate)
+        run = try values.decodeIfPresent(String.self, forKey: .run)
+        shortcut = try values.decodeIfPresent(String.self, forKey: .shortcut)
+        scene = try values.decodeIfPresent(String.self, forKey: .scene)
+        volume = try values.decodeIfPresent(Int.self, forKey: .volume)
+        page = try values.decodeIfPresent(PageTurn.self, forKey: .page)
+    }
+
     var action: Action {
         get { Action(run: run, shortcut: shortcut, scene: scene, volume: volume, page: page) }
         set {
@@ -93,12 +129,50 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var isBlank: Bool {
         label.isEmpty && icon == nil && action.isEmpty
     }
+
+    // `id` exists only to identify a row on screen and is not part of the
+    // file, so a fresh decode invents a new one. Comparing it would make every
+    // reload look like an edit, and would miss the render cache on every key.
+    static func == (a: Key, b: Key) -> Bool {
+        a.label == b.label
+            && a.color == b.color
+            && a.text_color == b.text_color
+            && a.icon == b.icon
+            && a.icon_color == b.icon_color
+            && a.animate == b.animate
+            && a.action == b.action
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(label)
+        hasher.combine(color)
+        hasher.combine(text_color)
+        hasher.combine(icon)
+        hasher.combine(icon_color)
+        hasher.combine(animate)
+        hasher.combine(action)
+    }
 }
 
 struct Knob: Codable, Equatable, Hashable {
     var cw = Action()
     var ccw = Action()
     var press = Action()
+
+    enum CodingKeys: String, CodingKey { case cw, ccw, press }
+
+    init(cw: Action = Action(), ccw: Action = Action(), press: Action = Action()) {
+        self.cw = cw
+        self.ccw = ccw
+        self.press = press
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        cw = try values.decodeIfPresent(Action.self, forKey: .cw) ?? Action()
+        ccw = try values.decodeIfPresent(Action.self, forKey: .ccw) ?? Action()
+        press = try values.decodeIfPresent(Action.self, forKey: .press) ?? Action()
+    }
 }
 
 struct DeckScene: Codable, Equatable {
@@ -106,6 +180,23 @@ struct DeckScene: Codable, Equatable {
     var keys: [Key] = []
     var buttons: [Action] = []
     var encoders: [Knob] = []
+
+    enum CodingKeys: String, CodingKey { case apps, keys, buttons, encoders }
+
+    init(apps: [String] = [], keys: [Key] = [], buttons: [Action] = [], encoders: [Knob] = []) {
+        self.apps = apps
+        self.keys = keys
+        self.buttons = buttons
+        self.encoders = encoders
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        apps = try values.decodeIfPresent([String].self, forKey: .apps) ?? []
+        keys = try values.decodeIfPresent([Key].self, forKey: .keys) ?? []
+        buttons = try values.decodeIfPresent([Action].self, forKey: .buttons) ?? []
+        encoders = try values.decodeIfPresent([Knob].self, forKey: .encoders) ?? []
+    }
 
     /// Pages are implicit: six keys to a page.
     func pages(perPage: Int = 6) -> Int {
@@ -126,7 +217,19 @@ struct Config: Codable, Equatable {
         case defaultScene = "default"
     }
 
-    /// DeckScene names in a stable order, so the sidebar does not shuffle.
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        brightness = try values.decodeIfPresent(Int.self, forKey: .brightness) ?? 70
+        poll_ms = try values.decodeIfPresent(Int.self, forKey: .poll_ms) ?? 300
+        press_feedback = try values.decodeIfPresent(Bool.self, forKey: .press_feedback) ?? true
+        font = try values.decodeIfPresent(String.self, forKey: .font)
+        defaultScene = try values.decodeIfPresent(String.self, forKey: .defaultScene) ?? "general"
+        scenes = try values.decodeIfPresent([String: DeckScene].self, forKey: .scenes) ?? [:]
+    }
+
+    /// Scene names in a stable order, so the sidebar does not shuffle.
     var sceneNames: [String] { scenes.keys.sorted() }
 }
 
