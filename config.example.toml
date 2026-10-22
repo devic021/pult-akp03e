@@ -573,10 +573,21 @@ background = "#06070a"
 # is a vendor HID device, not a keyboard, so macOS never sees its presses and
 # the daemon folds them in on its own. The waking press is swallowed, because
 # slapping a key to wake the dock should not also fire what that key does.
+#
+# The dock keeps going when the Mac's display sleeps; set
+# dark_when_display_sleeps = true if you would rather it went dark with the
+# screen. Full system sleep is another matter: the daemon is suspended along
+# with everything else, so the dock holds its last frame until the Mac wakes.
 
 [idle]
 after = "3m"
 scene = "zora"
 brightness = 35
-dark_when_display_sleeps = true
+dark_when_display_sleeps = false
 swallow_first_press = true
+
+# The frame the dock holds while the Mac sleeps. Nothing can animate then —
+# the daemon is frozen with everything else — so this is one still picture,
+# PNG or JPEG, spread across all six keys. Remove the line and the dock simply
+# keeps whatever it was showing.
+sleep_image = "~/.config/pult/sleep.png"

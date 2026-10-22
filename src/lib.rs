@@ -12,4 +12,5 @@ pub mod frontmost;
 pub mod icons;
 pub mod idle;
 pub mod permissions;
+pub mod power;
 pub mod render;

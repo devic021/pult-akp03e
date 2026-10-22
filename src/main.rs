@@ -15,6 +15,7 @@ use hidapi::HidApi;
 use pult::action::{self, Outcome};
 use base64::Engine;
 use pult::canvas::{self, Canvas};
+use pult::power::{self, Sleeping};
 use pult::config::{self, Config, Key, Surface};
 use pult::control::{Call, Control, Request};
 use pult::device;
@@ -217,6 +218,9 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     let mut resting = false;
     let mut dark = false;
     let mut swallow_press = false;
+    // Told before the Mac goes down, so the frame it holds all night is one we
+    // chose. Nothing here keeps the Mac awake — it only asks to paint first.
+    let sleeping = power::watch_sleep();
     // A deadline, not an elapsed check: waiting 20 ms at a time and then asking
     // whether 66 ms had passed meant the first eligible iteration landed at 80,
     // so the advertised 15 fps was really 12.5 and drifted with the work done
@@ -334,6 +338,35 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             // Undocumented action codes are not a reason to stop.
             Err(AjazzError::BadData) => {}
             Err(e) => return Err(e).context("reading dock input"),
+        }
+
+        if let Some(events) = sleeping.as_ref() {
+            while let Ok(event) = events.try_recv() {
+                match event {
+                    Sleeping::Soon(permission) => {
+                        if let Some(image) =
+                            state.config.idle.as_ref().and_then(|i| i.sleep_image.as_ref())
+                        {
+                            println!("Sleep   : leaving {}", image.display());
+                            if let Err(e) = paint_image(&device, &found, image) {
+                                eprintln!("sleep picture failed: {e:#}");
+                            }
+                        }
+                        // Dropping the permission is what lets the Mac go. It
+                        // must happen whatever the painting did.
+                        drop(permission);
+                    }
+                    Sleeping::Woke => {
+                        println!("Sleep   : awake");
+                        touched = Instant::now();
+                        resting = false;
+                        dark = false;
+                        device.set_brightness(state.config.brightness.min(100))?;
+                        paint(&device, state, &active, page, display_keys, &found)?;
+                        painted_at = Instant::now();
+                    }
+                }
+            }
         }
 
         if moving && Instant::now() >= next_frame {
@@ -514,6 +547,44 @@ fn paint(
 /// The page strip to draw, or nothing when a scene fits on one page.
 fn marker(page: usize, pages: usize) -> Option<(usize, usize)> {
     (pages > 1).then_some((page, pages))
+}
+
+/// Spreads one still picture across the whole dock.
+///
+/// Used for the frame the dock will hold while the Mac sleeps: the image is
+/// scaled to cover the canvas, cropped to it, and cut into tiles. Drawn in
+/// physical geometry, because a picture is a shape and shapes must survive the
+/// seams.
+fn paint_image(device: &Ajazz, found: &device::Found, path: &std::path::Path) -> Result<()> {
+    let (rows, cols) = found.kind.key_layout();
+    let (key, _) = found.kind.key_image_format().size;
+    let mut canvas = Canvas::new(
+        canvas::Mapping::Physical,
+        cols as u32,
+        rows as u32,
+        key as u32,
+    );
+
+    let picture = image::open(path)
+        .with_context(|| format!("reading {}", path.display()))?
+        .resize_to_fill(
+            canvas.width(),
+            canvas.height(),
+            image::imageops::FilterType::Lanczos3,
+        )
+        .to_rgb8();
+
+    canvas.image_mut().copy_from_slice(&picture);
+
+    for index in 0..canvas.keys().min(found.kind.display_key_count() as u32) {
+        let tile = image::DynamicImage::ImageRgb8(canvas.tile(index));
+        device
+            .set_button_image(index as u8, tile)
+            .with_context(|| format!("sending sleep tile {index}"))?;
+    }
+
+    device.flush().context("flushing the sleep picture")?;
+    Ok(())
 }
 
 /// Draws one frame of a scene that paints across the whole dock.

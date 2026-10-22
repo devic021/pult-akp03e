@@ -48,12 +48,28 @@ pub struct Idle {
     /// shifts colour at the bottom of its range.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brightness: Option<u8>,
-    /// Go dark rather than light an empty room.
-    #[serde(default = "yes")]
+    /// Follow the Mac's display to sleep.
+    ///
+    /// Off by default: the point of an idle screen is that it keeps running
+    /// when you look away. Turn it on if the dock lighting a dark room at
+    /// night bothers you.
+    ///
+    /// This is about the *display* sleeping while the Mac stays awake. Nothing
+    /// can be done about full system sleep: the daemon is suspended with
+    /// everything else, so the dock holds its last frame until the Mac wakes.
+    #[serde(default)]
     pub dark_when_display_sleeps: bool,
     /// Waking the dock with a key should not also fire what that key does.
     #[serde(default = "yes")]
     pub swallow_first_press: bool,
+    /// The picture to leave on the dock while the Mac sleeps.
+    ///
+    /// Nothing here can animate: the daemon is frozen along with the rest of
+    /// the Mac, so whatever was sent last is what stays on the keys until it
+    /// wakes. This is that last frame — a PNG or JPEG, drawn across the whole
+    /// dock. Absent means the dock simply keeps whatever it was showing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sleep_image: Option<PathBuf>,
 }
 
 fn yes() -> bool {
@@ -263,10 +279,33 @@ impl Config {
     pub fn load(path: &Path) -> Result<Config> {
         let text = fs::read_to_string(path)
             .with_context(|| format!("reading config {}", path.display()))?;
-        let config: Config = toml::from_str(&text)
+        let mut config: Config = toml::from_str(&text)
             .with_context(|| format!("parsing config {}", path.display()))?;
+        config.expand_paths();
         config.validate()?;
         Ok(config)
+    }
+
+    /// Rewrites every path in the file so a leading `~` means what it looks
+    /// like it means.
+    fn expand_paths(&mut self) {
+        if let Some(font) = self.font.take() {
+            self.font = Some(expand(&font));
+        }
+        if let Some(idle) = self.idle.as_mut() {
+            if let Some(image) = idle.sleep_image.take() {
+                idle.sleep_image = Some(expand(&image));
+            }
+        }
+        for scene in self.scenes.values_mut() {
+            for key in scene.keys.iter_mut() {
+                // A bundled icon is a name, not a path; only a path can have a
+                // tilde in front of it.
+                if let Some(icon) = key.icon.as_ref().filter(|i| i.starts_with("~/")) {
+                    key.icon = Some(expand(Path::new(icon)).to_string_lossy().into_owned());
+                }
+            }
+        }
     }
 
     /// Rejects what would otherwise fail silently at runtime: a missing default
@@ -283,6 +322,9 @@ impl Config {
             if crate::idle::parse_duration(&idle.after).is_none() {
                 bail!("idle after {:?} is not a duration like 30s, 3m or 1h", idle.after);
             }
+            // A missing sleep picture is not worth refusing the whole file
+            // over: the dock would stop working over a renamed image. It is
+            // reported when it is reached, and the dock keeps its last frame.
         }
 
         for (name, scene) in &self.scenes {
@@ -378,6 +420,21 @@ impl Config {
                 .chain(encoders)
                 .any(|a| a.shortcut.is_some())
         })
+    }
+}
+
+/// Expands a leading `~` to the home directory.
+///
+/// People write paths with a tilde and nothing in Rust expands it, so a
+/// perfectly good `~/Pictures/night.png` would be reported as missing.
+pub fn expand(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    let Some(rest) = text.strip_prefix("~/") else {
+        return path.to_path_buf();
+    };
+    match std::env::var_os("HOME") {
+        Some(home) => PathBuf::from(home).join(rest),
+        None => path.to_path_buf(),
     }
 }
 
