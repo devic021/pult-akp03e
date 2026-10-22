@@ -2,8 +2,10 @@
 //! dock. The dock holds no state: every scene change is six images plus a new
 //! action table, pushed over HID.
 
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::sleep;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -16,12 +18,14 @@ use pult::action::{self, Outcome};
 use base64::Engine;
 use pult::canvas::{self, Canvas};
 use pult::power::{self, Sleeping};
-use pult::config::{self, Config, Key, Surface};
+use pult::config::{self, Config, Hour, Key, Surface};
+use pult::feed::{self, Feeds};
 use pult::control::{Call, Control, Request};
 use pult::device;
 use pult::frontmost;
 use pult::permissions;
-use pult::render::{Frame, Renderer};
+use pult::render::{Frame, Readout, Renderer};
+use pult::values::Bindings;
 use serde_json::json;
 
 /// How long to block on device input before looking at anything else.
@@ -39,6 +43,18 @@ const FRAME_INTERVAL: Duration = Duration::from_millis(66);
 const MIN_TIMEOUT: Duration = Duration::from_millis(2);
 /// How long a key stays lit after being pressed.
 const PRESS_FLASH: Duration = Duration::from_millis(180);
+
+/// How many hours ahead the forecast can be read.
+///
+/// The same twenty-four the shipped feed asks the host for: a knob that can
+/// reach an hour the feed never fetched is a knob that reaches an em dash.
+const SCRUB_SPAN: usize = 24;
+
+/// How long a scrubbed forecast holds before it comes back to now.
+///
+/// It must come back on its own: a dock left three hours ahead is a dock
+/// quietly showing the wrong weather, and nobody remembers turning the knob.
+const SCRUB_HOLDS: Duration = Duration::from_secs(20);
 /// The dock dims itself if left alone; the SDK's keep-alive prevents that.
 const KEEP_ALIVE_EVERY: Duration = Duration::from_secs(30);
 /// Pause before looking for the dock again after it goes away.
@@ -111,18 +127,85 @@ struct State {
     stamp: Option<SystemTime>,
     config: Config,
     renderer: Renderer,
+    /// What the feeds have last said. Shared with their threads; the loop only
+    /// ever reads it.
+    bindings: Arc<Mutex<Bindings>>,
+    /// The running pollers. Dropping them stops them, which is how a config
+    /// reload replaces one set with another.
+    feeds: Option<Feeds>,
+    /// Where the dock is, read from a file of its own so that a home address
+    /// never lands in the config the app round-trips and backs up.
+    places: BTreeMap<String, String>,
+    /// Which of its readings each key is showing, by scene and key.
+    views: BTreeMap<(String, u8), usize>,
+    /// Hours ahead of now that the scene is reading, and when the knob last
+    /// moved; zero is the present.
+    hour: i32,
+    scrubbed_at: Option<Instant>,
+    /// The text last sent to each key, so a reading is pushed when it changes
+    /// and not when its feed merely answered again.
+    painted: RefCell<BTreeMap<(String, u8), String>>,
 }
 
 impl State {
     fn load(path: PathBuf) -> Result<State> {
         let config = Config::load(&path)?;
         let renderer = Renderer::new(config.font.as_deref(), (60, 60))?;
-        Ok(State {
+        let mut state = State {
             stamp: modified(&path),
             path,
             config,
             renderer,
-        })
+            bindings: Arc::new(Mutex::new(Bindings::new())),
+            feeds: None,
+            places: feed::places(),
+            views: BTreeMap::new(),
+            hour: 0,
+            scrubbed_at: None,
+            painted: RefCell::new(BTreeMap::new()),
+        };
+        state.restart_feeds();
+        Ok(state)
+    }
+
+    /// Replaces the running pollers with the ones this config asks for.
+    ///
+    /// The old set is dropped first, so a renamed feed's thread is gone before
+    /// its replacement starts and two of them cannot write the same name.
+    fn restart_feeds(&mut self) {
+        self.feeds = None;
+        self.painted.borrow_mut().clear();
+        if self.config.feeds.is_empty() {
+            return;
+        }
+        self.places = feed::places();
+        self.feeds = Some(Feeds::start(
+            &self.config.feeds,
+            &self.places,
+            Arc::clone(&self.bindings),
+        ));
+        println!("Feeds   : {} polling", self.config.feeds.len());
+    }
+
+    /// What the feeds have said, for reading.
+    ///
+    /// A poller that panicked must not take the dock down with it, so the lock
+    /// is taken back rather than unwrapped.
+    fn bindings(&self) -> std::sync::MutexGuard<'_, Bindings> {
+        self.bindings.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The scrub indicator, or nothing while the scene reads the present.
+    fn scrub_marker(&self) -> Option<(usize, usize)> {
+        (self.hour != 0).then(|| (self.hour.unsigned_abs() as usize, SCRUB_SPAN))
+    }
+
+    /// Which reading a key is showing.
+    fn view_of(&self, scene: &str, index: u8) -> usize {
+        self.views
+            .get(&(scene.to_string(), index))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Takes a configuration handed over by the app, rebuilding what depends
@@ -130,8 +213,12 @@ impl State {
     /// reload the write we just made ourselves.
     fn adopt(&mut self, config: Config) -> Result<()> {
         self.renderer = Renderer::new(config.font.as_deref(), self.renderer.size())?;
+        let feeds_changed = feeds_differ(&self.config, &config);
         self.config = config;
         self.stamp = modified(&self.path);
+        if feeds_changed {
+            self.restart_feeds();
+        }
         Ok(())
     }
 
@@ -154,8 +241,12 @@ impl State {
         match Config::load(&self.path) {
             Ok(config) => match Renderer::new(config.font.as_deref(), self.renderer.size()) {
                 Ok(renderer) => {
+                    let feeds_changed = feeds_differ(&self.config, &config);
                     self.config = config;
                     self.renderer = renderer;
+                    if feeds_changed {
+                        self.restart_feeds();
+                    }
                     println!("Config reloaded");
                     true
                 }
@@ -412,6 +503,38 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                                 }));
                             }
                         }
+                        Some(Step::Cycle(index)) => {
+                            let views = state
+                                .config
+                                .scene(&active)
+                                .and_then(|scene| {
+                                    scene.page(page, display_keys as usize).get(index as usize).map(Key::views)
+                                })
+                                .unwrap_or(1);
+                            let next = (state.view_of(&active, index) + 1) % views.max(1);
+                            state.views.insert((active.clone(), index), next);
+                            println!("key {index} -> reading {}", next + 1);
+                            // One key, 1.2 ms: nothing else on the page moved.
+                            refresh(&device, state, &active, page, display_keys)?;
+                        }
+                        Some(Step::Scrub(hour)) => {
+                            let before = state.hour;
+                            state.hour = match hour {
+                                Hour::Next => (state.hour + 1).min(SCRUB_SPAN as i32 - 1),
+                                Hour::Prev => (state.hour - 1).max(0),
+                                Hour::Now => 0,
+                            };
+                            state.scrubbed_at = (state.hour != 0).then(Instant::now);
+                            if state.hour != before {
+                                // The whole page moves together: one key an
+                                // hour ahead of the other five is a page of
+                                // numbers that do not belong to each other.
+                                paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
+                                painted_at = Instant::now();
+                                tau = 0.0;
+                                println!("Hour    : +{}h", state.hour);
+                            }
+                        }
                         None => {}
                     }
                 }
@@ -488,8 +611,27 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             }
         }
 
+        // Outside the frame tick on purpose: a number arriving must not have
+        // to wait for an animation clock that a still scene never starts.
+        if trying.is_none() {
+            refresh(&device, state, &active, page, display_keys)?;
+        }
+
         if last_poll.elapsed() >= poll_every {
             last_poll = Instant::now();
+
+            if let Some(at) = state.scrubbed_at {
+                if at.elapsed() >= SCRUB_HOLDS {
+                    state.scrubbed_at = None;
+                    if state.hour != 0 {
+                        state.hour = 0;
+                        paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
+                        painted_at = Instant::now();
+                        tau = 0.0;
+                        println!("Hour    : back to now");
+                    }
+                }
+            }
 
             if state.reload_if_changed() {
                 for line in state.config.missing_files() {
@@ -628,18 +770,30 @@ fn paint(
     let per_page = display_keys as usize;
     let keys = scene.page(page, per_page);
     let marker = marker(page, scene.pages(per_page));
+    let hour = state.scrub_marker();
+
+    // A full repaint is the baseline every later change is measured against,
+    // so the record of what is on the keys starts again here.
+    state.painted.borrow_mut().clear();
 
     for index in 0..display_keys {
         match keys.get(index as usize) {
             Some(key) => {
                 let frame = Frame {
                     pages: marker,
+                    hour,
                     ..Frame::at(0.0)
                 };
                 let image = draw(state, key, frame, scene_name, index);
                 device
                     .set_button_image(index, image)
                     .with_context(|| format!("sending image for key {index}"))?;
+                if key.live() {
+                    state
+                        .painted
+                        .borrow_mut()
+                        .insert((scene_name.to_string(), index), output_of(state, key, scene_name, index));
+                }
             }
             None => device.clear_button_image(index)?,
         }
@@ -945,7 +1099,16 @@ fn clock(surface: Option<&Surface>) -> (Duration, f32) {
 /// A missing icon or a malformed colour is a mistake in the config; losing the
 /// dock over it would be a far worse answer than showing a bare label.
 fn draw(state: &State, key: &Key, frame: Frame, scene: &str, index: u8) -> DynamicImage {
-    match state.renderer.key_frame(key, frame) {
+    let view = key.view(state.view_of(scene, index));
+    let drawn = state.renderer.reading(
+        &view,
+        &state.bindings(),
+        SystemTime::now(),
+        state.hour,
+        frame,
+    );
+
+    match drawn {
         Ok(image) => image,
         Err(e) => {
             eprintln!("key {index} of scene {scene:?} will not draw: {e:#}");
@@ -964,6 +1127,104 @@ fn draw(state: &State, key: &Key, frame: Frame, scene: &str, index: u8) -> Dynam
                 })
         }
     }
+}
+
+/// The key as the daemon can draw it now, with every template filled in.
+fn resolved(state: &State, key: &Key, scene: &str, index: u8) -> Key {
+    let view = key.view(state.view_of(scene, index));
+    pult::render::fill(&view, &state.bindings(), SystemTime::now(), state.hour)
+}
+
+/// Resolves a key's reading as the daemon sees it this moment.
+fn readout_for(state: &State, key: &Key, scene: &str, index: u8) -> Readout {
+    let view = key.view(state.view_of(scene, index));
+    Readout::of(&view, &state.bindings(), SystemTime::now(), state.hour)
+}
+
+/// Everything a key currently shows, as one string.
+///
+/// The unit separator keeps the fields from running into one another, so a
+/// caption ending in a digit cannot look like a changed value.
+fn output_of(state: &State, key: &Key, scene: &str, index: u8) -> String {
+    if key.reads() {
+        let r = readout_for(state, key, scene, index);
+        return format!(
+            "{}\u{1f}{}\u{1f}{:?}\u{1f}{}\u{1f}{:?}\u{1f}{}",
+            r.value, r.caption, r.icon, r.icon_rotate, r.background.0, r.fresh
+        );
+    }
+    let key = resolved(state, key, scene, index);
+    format!(
+        "{}\u{1f}{:?}\u{1f}{:?}",
+        key.label, key.icon, key.icon_rotate
+    )
+}
+
+/// Pushes the keys whose reading has changed, and nothing else.
+///
+/// Run every iteration, so a feed answering or a caption ageing reaches the
+/// dock inside one read timeout without the 15 fps path ever starting. The
+/// comparison is on the output: a host that answers every fifteen minutes with
+/// the same number must not cost six HID writes, and a dock that redraws for
+/// nothing is a dock that feels busy.
+fn refresh(
+    device: &Ajazz,
+    state: &State,
+    scene_name: &str,
+    page: usize,
+    display_keys: u8,
+) -> Result<()> {
+    let Some(scene) = state.config.scene(scene_name) else {
+        return Ok(());
+    };
+    if scene.canvas().is_some() {
+        return Ok(());
+    }
+
+    let per_page = display_keys as usize;
+    let marker = marker(page, scene.pages(per_page));
+    let hour = state.scrub_marker();
+    let mut drawn = false;
+
+    for (index, key) in scene.page(page, per_page).iter().enumerate() {
+        let index = index as u8;
+        if !key.live() {
+            continue;
+        }
+
+        let output = output_of(state, key, scene_name, index);
+        let slot = (scene_name.to_string(), index);
+        if state.painted.borrow().get(&slot) == Some(&output) {
+            continue;
+        }
+
+        let frame = Frame {
+            pages: marker,
+            hour,
+            ..Frame::at(0.0)
+        };
+        let image = draw(state, key, frame, scene_name, index);
+        device
+            .set_button_image(index, image)
+            .with_context(|| format!("sending reading for key {index}"))?;
+        state.painted.borrow_mut().insert(slot, output);
+        drawn = true;
+    }
+
+    if drawn {
+        device.flush().context("flushing readings")?;
+    }
+    Ok(())
+}
+
+/// Whether two configs ask for different feeds.
+///
+/// Compared by their written form because a `Feed` carries no equality of its
+/// own, and restarting pollers that have not changed would throw away every
+/// sample on every save.
+fn feeds_differ(before: &Config, after: &Config) -> bool {
+    let written = |config: &Config| toml::to_string(&config.feeds).unwrap_or_default();
+    written(before) != written(after)
 }
 
 /// Redraws only what moves: animated keys, and the key being pressed.
@@ -1011,7 +1272,12 @@ fn redraw(
             continue;
         }
 
-        let frame = Frame { time, press, pages };
+        let frame = Frame {
+            time,
+            press,
+            pages,
+            hour: state.scrub_marker(),
+        };
         let image = draw(state, key, frame, scene_name, index);
         device
             .set_button_image(index, image)
@@ -1030,6 +1296,10 @@ fn redraw(
 enum Step {
     Scene(String),
     Page(usize),
+    /// A readout was pressed: show its next reading.
+    Cycle(u8),
+    /// A knob moved the forecast.
+    Scrub(Hour),
 }
 
 /// Runs what an event is bound to; returns where to go next, if anywhere.
@@ -1045,6 +1315,22 @@ fn handle(
     };
 
     let per_page = display_keys as usize;
+
+    // A readout's press changes what it shows. Checked before the action table
+    // because such a key has no action to run: validation refuses one, so a
+    // press has exactly one meaning.
+    if let Event::ButtonDown(index) = event {
+        if index < display_keys {
+            let reads = scene
+                .page(page, per_page)
+                .get(index as usize)
+                .is_some_and(Key::reads);
+            if reads {
+                return Ok(Some(Step::Cycle(index)));
+            }
+        }
+    }
+
     let (action, what) = match event {
         Event::ButtonDown(key) if key < display_keys => (
             scene.page(page, per_page).get(key as usize).map(|k| &k.action),
@@ -1080,6 +1366,7 @@ fn handle(
                     let pages = scene.pages(per_page);
                     Ok(Some(Step::Page(turn.apply(page, pages))))
                 }
+                Ok(Outcome::Scrub(hour)) => Ok(Some(Step::Scrub(hour))),
                 Ok(Outcome::Nothing) => Ok(None),
                 // A failed action is the user's problem to fix, not a reason to quit.
                 Err(e) => {
@@ -1297,6 +1584,77 @@ fn serve(
                 Ok(value) => reply.ok(value),
                 Err(e) => reply.fail(format!("{e:#}")),
             });
+            Ok(false)
+        }
+
+        Request::Feeds { name } => {
+            // Polling on request happens here, on the loop's own thread. It is
+            // one curl with an eight-second ceiling, and the alternative — a
+            // thread writing into the same bindings the pollers use — buys
+            // nothing for a button somebody pressed once.
+            if let Some(name) = name.as_deref() {
+                match state.config.feeds.get(name) {
+                    Some(feed) => {
+                        let polled = feed
+                            .target(&state.places)
+                            .and_then(|target| feed::poll(feed, &target, SystemTime::now()));
+                        match polled {
+                            Ok(sample) => state.bindings().put(name, sample),
+                            Err(e) => state.bindings().fail(name, format!("{e:#}")),
+                        }
+                    }
+                    None => {
+                        reply.fail(format!("no feed called {name:?}"));
+                        return Ok(false);
+                    }
+                }
+            }
+
+            let now = SystemTime::now();
+            let bindings = state.bindings();
+            let feeds: Vec<_> = state
+                .config
+                .feeds
+                .iter()
+                .map(|(name, feed)| {
+                    let sample = bindings.sample(name);
+                    json!({
+                        "name": name,
+                        "kind": feed.kind,
+                        "source": feed.url.clone().or_else(|| feed.run.clone()),
+                        "every": feed.every,
+                        "stale_after": feed.stale_after,
+                        // Seconds, not a sentence: the app writes the words,
+                        // in whichever of its two languages is showing.
+                        "age": bindings.age(name, now).map(|age| age.as_secs()),
+                        "stale": bindings.is_stale(name, now),
+                        "error": bindings.error(name),
+                        "fields": sample.map(|sample| {
+                            sample
+                                .fields
+                                .iter()
+                                .map(|(field, datum)| (field.clone(), datum.as_text()))
+                                .collect::<std::collections::BTreeMap<_, _>>()
+                        }),
+                        "series": sample.map(|sample| {
+                            sample
+                                .series
+                                .iter()
+                                .map(|(field, series)| (field.clone(), series.values.len()))
+                                .collect::<std::collections::BTreeMap<_, _>>()
+                        }),
+                    })
+                })
+                .collect();
+
+            reply.ok(json!({
+                "feeds": feeds,
+                // Where the readings are being asked for, so the app can tell
+                // the difference between "no coordinates yet" and "the host is
+                // down" without guessing.
+                "places": state.places,
+                "hour": state.hour,
+            }));
             Ok(false)
         }
 

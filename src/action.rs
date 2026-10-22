@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
-use crate::config::{Action, Page};
+use crate::config::{Action, Hour, Page};
 
 /// A key press can ask for a different scene or page; everything else is a
 /// side effect.
@@ -12,6 +12,8 @@ pub enum Outcome {
     Nothing,
     SwitchScene(String),
     TurnPage(Turn),
+    /// Move the whole scene through the forecast.
+    Scrub(Hour),
 }
 
 /// Where a page action lands, once the number of pages is known.
@@ -45,6 +47,8 @@ pub fn describe(action: &Action) -> String {
         format!("scene {scene:?}")
     } else if let Some(page) = action.page {
         format!("page {page:?}").to_lowercase()
+    } else if let Some(hour) = action.hour {
+        format!("hour {hour:?}").to_lowercase()
     } else {
         "nothing".to_string()
     }
@@ -91,6 +95,10 @@ pub fn run(action: &Action) -> Result<Outcome> {
 
     if let Some(page) = action.page {
         return Ok(Outcome::TurnPage(Turn(page)));
+    }
+
+    if let Some(hour) = action.hour {
+        return Ok(Outcome::Scrub(hour));
     }
 
     Ok(Outcome::Nothing)

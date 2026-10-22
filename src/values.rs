@@ -335,6 +335,28 @@ impl Bindings {
         }
     }
 
+    /// One field as a number, for a ramp that colours by it.
+    pub fn number(&self, path: &str, now: SystemTime, hours: i32) -> Option<f64> {
+        let (name, field) = path.split_once('.')?;
+        let sample = self.sample(name)?;
+        self.pick(sample, field, now, hours)?.as_number()
+    }
+
+    /// How far behind the oldest feed a template reads is.
+    ///
+    /// This takes the caption's place once a reading goes stale: the number is
+    /// still on the key, and how far behind it is, is now the useful fact.
+    pub fn age_caption(&self, template: &str, now: SystemTime) -> String {
+        let oldest = feeds_named(template)
+            .into_iter()
+            .filter_map(|name| self.age(name, now))
+            .max();
+        match oldest {
+            Some(age) => ago(age.as_secs() as i64),
+            None => NOTHING.to_string(),
+        }
+    }
+
     /// One placeholder, as `(text, stale)`.
     fn one(&self, body: &str, now: SystemTime, hours: i32) -> Option<(String, bool)> {
         let (path, spec) = match body.split_once('|') {
@@ -394,6 +416,37 @@ impl Entry {
             None => false,
         }
     }
+}
+
+/// Every feed a template reads, in the order they first appear.
+///
+/// Exposed so a config can be checked before anything is polled: a key reading
+/// a feed nobody configured will only ever show an em dash, and that is worth
+/// saying once at load rather than leaving on the dock.
+pub fn feeds_named(template: &str) -> Vec<&str> {
+    let mut names = Vec::new();
+    let mut rest = template;
+
+    while let Some(open) = rest.find('{') {
+        rest = &rest[open + 1..];
+        if let Some(stripped) = rest.strip_prefix('{') {
+            rest = stripped;
+            continue;
+        }
+        let Some(close) = rest.find('}') else {
+            break;
+        };
+        let (body, after) = rest.split_at(close);
+        rest = &after[1..];
+
+        let path = body.split('|').next().unwrap_or(body).trim();
+        let name = path.split('.').next().unwrap_or(path).trim();
+        if !name.is_empty() && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+
+    names
 }
 
 /// Copies literal text, collapsing the `{{` and `}}` escapes so a key can show

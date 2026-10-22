@@ -20,13 +20,21 @@
 #   volume   = -5                  changes output volume by that much
 #   scene    = "other"             switches scene by hand
 #   page     = "next"|"prev"|"first"
+#   hour     = "next"|"prev"|"now" walks a forecast (see vrednosti)
 #
 # ...and is drawn from:
-#   label       text, shrunk and wrapped to fit
-#   icon        a bundled icon's name, or a path to an SVG or image
-#   color       background, #RGB or #RRGGBB
-#   icon_color  defaults to the label colour
-#   animate     "pulse" (breathes), "spin" (turns), "blink" (flashes)
+#   label        text, shrunk and wrapped to fit
+#   icon         a bundled icon's name, or a path to an SVG or image
+#   color        background, #RGB or #RRGGBB
+#   icon_color   defaults to the label colour
+#   icon_rotate  degrees to turn the icon
+#   animate      "pulse" (breathes), "spin" (turns), "blink" (flashes)
+#
+# A key can show a reading instead of a label. See vrednosti, further down:
+#   value        the number, drawn large
+#   caption      the line under it, saying what the number is
+#   ramp         background chosen by the reading itself
+#   cycle        the other readings; a press moves to the next
 #
 # Find an app's bundle ID with:  lsappinfo info -only bundleid "$(lsappinfo front)"
 
@@ -632,6 +640,153 @@ background = "#04050a"
 shape = "heartbeat"       # its own: sine | ease | heartbeat
 floor = 0.08              # its own: the level at the bottom of a breath. Keep
                           # it above zero so the dock never looks switched off
+
+# ==================================================================== vrednosti
+# A key can show a number that comes from somewhere else. A `[feeds.NAME]`
+# block says where to get it; a key's `value` and `caption` are templates that
+# read it back:
+#
+#   value = "{vreme.temp|round}°"      feed name, field name, formatter
+#
+# Formatters, chosen by what fits a key — 54 px of usable width holds three
+# comfortable glyphs at 34 px and five at 22, never six, which is why a `%`
+# belongs in the caption and not on the number:
+#
+#   round round1 frac2 int      decimals
+#   signed signed1             keeps the + that makes a change a change
+#   k bytes                    1200 -> 1.2k, 1536 -> 1.5K
+#   dur until clock age        spans and times: 2h14, 47m, 15:21, 18m
+#   clip:N                     cuts a word to N characters
+#   compass16                  a bearing snapped to sixteen points
+#   wmo                        a weather code as an icon's name
+#
+# A missing value is an em dash, never a zero. A feed past its `stale_after`
+# keeps its last number, dimmed, with the caption replaced by how old it is:
+# an old temperature is still information, a blank key is not.
+#
+# `cycle` is the other things a key can show; pressing it moves to the next and
+# repaints that one key. `ramp` makes the background itself a reading. A knob
+# bound to `hour` moves the whole scene through the forecast and snaps back to
+# now after twenty seconds, so a dock left three hours ahead cannot quietly
+# show the wrong weather.
+#
+# Both hosts below are open-meteo: no key, no account, about 2.5 KB a poll.
+# They need to know where you are, and that does not go in this file — the app
+# round-trips it, copies it to .bak on every save and people paste it into bug
+# reports. Put your coordinates in a file of their own instead:
+#
+#   ~/Library/Application Support/Pult/place.toml
+#   lat = 45.2671
+#   lon = 19.8335
+#
+# Without it the feeds say so at startup and the keys show em dashes.
+
+[feeds.vreme]
+kind = "http"
+url = "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,is_day&hourly=temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m&forecast_hours=24&daily=temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto"
+every = "15m"
+stale_after = "2h"
+# A 200 that quietly omits this is a failure, not data: without it a host that
+# drops the field would leave the last temperature looking current all day.
+require = ["/current/temperature_2m"]
+
+[feeds.vreme.map]
+temp    = "/current/temperature_2m"
+feels   = "/current/apparent_temperature"
+hum     = "/current/relative_humidity_2m"
+code    = "/current/weather_code"
+wind    = "/current/wind_speed_10m"
+gust    = "/current/wind_gusts_10m"
+bearing = "/current/wind_direction_10m"
+rain    = "/hourly/precipitation_probability/0"
+hi      = "/daily/temperature_2m_max/0"
+lo      = "/daily/temperature_2m_min/0"
+sunset  = "/daily/sunset/0"
+# Windows, which say their own width in the caption and so do not scrub: the
+# worst it gets in the next six hours, and how much falls in them.
+rain6   = "max:/hourly/precipitation_probability[0:6]"
+mm6     = "sum:/hourly/precipitation[0:6]"
+
+# A series carries its own axis, so the knob reads the hour the host named
+# rather than counting array slots — which is an hour wrong twice a year.
+# `for` names the scalar it stands in for, so `{vreme.temp}` scrubs by itself.
+#
+# Every reading on the page has one. A single key moving while the other five
+# stay on the present hour is six numbers that do not belong to each other.
+temp_h    = { series = "/hourly/temperature_2m",        axis = "/hourly/time", for = "temp" }
+feels_h   = { series = "/hourly/apparent_temperature",  axis = "/hourly/time", for = "feels" }
+hum_h     = { series = "/hourly/relative_humidity_2m",  axis = "/hourly/time", for = "hum" }
+code_h    = { series = "/hourly/weather_code",          axis = "/hourly/time", for = "code" }
+wind_h    = { series = "/hourly/wind_speed_10m",        axis = "/hourly/time", for = "wind" }
+gust_h    = { series = "/hourly/wind_gusts_10m",        axis = "/hourly/time", for = "gust" }
+bearing_h = { series = "/hourly/wind_direction_10m",    axis = "/hourly/time", for = "bearing" }
+rain_h    = { series = "/hourly/precipitation_probability", axis = "/hourly/time", for = "rain" }
+
+[feeds.vazduh]
+kind = "http"
+url = "https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}&current=european_aqi,pm2_5,pm10,uv_index"
+every = "30m"
+stale_after = "3h"
+map = { aqi = "/current/european_aqi", pm25 = "/current/pm2_5", pm10 = "/current/pm10", uv = "/current/uv_index" }
+
+# ------------------------------------------------------------------- vreme ---
+# Six readings, each with more behind it than it shows. Reach it with
+# `scene = "vreme"` on any key, or from a knob.
+[scenes.vreme]
+
+keys = [
+  # The background is the temperature as much as the number is.
+  { value = "{vreme.temp|round}°", caption = "oseća {vreme.feels|round}°",
+    ramp = { field = "vreme.temp", stops = [[-5, "#1f6feb"], [10, "#1a7f37"], [24, "#9a6700"], [34, "#d93025"]] },
+    cycle = [
+      { value = "{vreme.feels|round}°", caption = "oseća se" },
+      { value = "{vreme.hum|round}", caption = "% vlage" },
+      { value = "{vreme.hi|round}/{vreme.lo|round}", caption = "danas" },
+    ] },
+
+  { value = "{vreme.rain|round}", caption = "% kiše", icon = "umbrella", color = "#1f6feb",
+    cycle = [
+      { value = "{vreme.rain6|round}", caption = "najviše 6h", icon = "umbrella" },
+      { value = "{vreme.mm6|round1}", caption = "mm / 6h", icon = "droplets" },
+    ] },
+
+  # The arrow points where the wind is going, quantised to sixteen points so
+  # the rotated-icon cache stays at sixteen entries.
+  { value = "{vreme.wind|round}", caption = "km/h", color = "#30363d",
+    icon = "navigation", icon_rotate = "{vreme.bearing|compass16}",
+    cycle = [
+      { value = "{vreme.gust|round}", caption = "u udaru", icon = "wind" },
+    ] },
+
+  # No number at all: the sky is a glyph, with today's range under it.
+  { icon = "{vreme.code|wmo}", label = "{vreme.hi|round}/{vreme.lo|round}", color = "#0d1117" },
+
+  { value = "{vreme.sunset|until}", caption = "zalazak", icon = "sunset", color = "#6e40c9",
+    cycle = [
+      { value = "{vreme.sunset|clock}", caption = "u", icon = "clock" },
+    ] },
+
+  { value = "{vazduh.aqi|round}", caption = "vazduh",
+    ramp = { field = "vazduh.aqi", stops = [[20, "#1a7f37"], [40, "#9a6700"], [60, "#d93025"], [100, "#6e40c9"]] },
+    cycle = [
+      { value = "{vazduh.pm25|round1}", caption = "PM2.5" },
+      { value = "{vazduh.pm10|round}", caption = "PM10" },
+      { value = "{vazduh.uv|round1}", caption = "UV", icon = "sun" },
+    ] },
+]
+
+buttons = [
+  { scene = "general" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  # The big knob walks the forecast. It comes back to now on its own.
+  { cw = { hour = "next" }, ccw = { hour = "prev" }, press = { hour = "now" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
 
 # ================================================================== mirovanje
 # When nobody has touched the Mac for a while the dock stops being a controller

@@ -135,6 +135,112 @@ pub fn fill(template: &str, places: &BTreeMap<String, String>) -> Result<String>
     Ok(text)
 }
 
+/// Whether a mapping spec is one this runtime can follow.
+///
+/// A typo in a reducer would otherwise be silent: the field never arrives, the
+/// key shows an em dash for the life of the daemon, and nothing says why.
+pub fn understands(spec: &str) -> bool {
+    spec.starts_with('/') || reducer(spec).is_some()
+}
+
+impl Feed {
+    /// Everything about this feed that can be wrong before it is ever polled.
+    pub fn check(&self) -> Result<()> {
+        match self.kind {
+            FeedKind::Http => {
+                let url = self.url.as_deref().context("an http feed needs a url")?;
+                if !url.starts_with("http://") && !url.starts_with("https://") {
+                    bail!("the url must begin with http:// or https://, not {url:?}");
+                }
+            }
+            FeedKind::Shell => {
+                self.run.as_deref().context("a shell feed needs a run")?;
+            }
+        }
+
+        match parse_duration(&self.every) {
+            None => bail!("every {:?} is not a duration like 15m", self.every),
+            // Not a style note: a sub-second poll against someone else's host
+            // is a denial of service with this daemon's name on it.
+            Some(every) if every < Duration::from_secs(1) => {
+                bail!("every {:?} is too often; a second is the floor", self.every)
+            }
+            Some(_) => {}
+        }
+        if let Some(stale) = &self.stale_after {
+            if parse_duration(stale).is_none() {
+                bail!("stale_after {stale:?} is not a duration like 2h");
+            }
+        }
+
+        for pointer in &self.require {
+            if !pointer.starts_with('/') {
+                bail!("require {pointer:?} must be a JSON pointer, so it starts with /");
+            }
+        }
+
+        for (field, mapping) in &self.map {
+            match mapping {
+                Mapping::One(spec) => {
+                    if !understands(spec) {
+                        bail!(
+                            "{field} reads {spec:?}, which is neither a JSON pointer nor \
+                             one of {} over one",
+                            OPERATIONS.join(", ")
+                        );
+                    }
+                }
+                Mapping::Many(map) => {
+                    for (what, pointer) in [("series", &map.series), ("axis", &map.axis)] {
+                        if !pointer.starts_with('/') {
+                            bail!("{field}'s {what} {pointer:?} is not a JSON pointer");
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Where the dock is, read from a file beside the control socket.
+///
+/// Deliberately not in the config. The app round-trips that file, copies it to
+/// `.bak` on every save and people paste it into bug reports; a latitude and a
+/// longitude are a home address, so they live in a file nothing else touches.
+pub fn places() -> BTreeMap<String, String> {
+    let mut places = BTreeMap::new();
+
+    let Some(path) = crate::control::socket_path()
+        .ok()
+        .and_then(|socket| socket.parent().map(|dir| dir.join("place.toml")))
+    else {
+        return places;
+    };
+    let Ok(text) = std::fs::read_to_string(&path) else {
+        return places;
+    };
+    let table: toml::Table = match text.parse() {
+        Ok(table) => table,
+        Err(e) => {
+            eprintln!("Place   : {} will not parse: {e}", path.display());
+            return places;
+        }
+    };
+
+    for (name, value) in table {
+        // Numbers as well as strings: nobody writing `lat = 45.2671` by hand
+        // should have to know it must be quoted.
+        let text = match value {
+            toml::Value::String(text) => text,
+            other => other.to_string(),
+        };
+        places.insert(name, text);
+    }
+    places
+}
+
 /// Fetches and extracts once.
 pub fn poll(feed: &Feed, target: &str, now: SystemTime) -> Result<Sample> {
     let body = fetch(feed, target)?;
@@ -367,6 +473,10 @@ impl Feeds {
             let target = match feed.target(places) {
                 Ok(target) => target,
                 Err(error) => {
+                    // Said once, out loud: this is a config problem, and the
+                    // commonest one is coordinates nobody has set yet. Leaving
+                    // it only in the bindings means six em dashes and no clue.
+                    eprintln!("Feeds   : {name} cannot run: {error:#}");
                     write(&bindings).fail(name, format!("{error:#}"));
                     continue;
                 }

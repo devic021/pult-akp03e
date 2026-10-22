@@ -1,11 +1,19 @@
 //! Renders a scene to a PNG, so key art can be checked without the dock.
 //!
 //!   preview <scene>[:page] [out.png] [config.toml]
+//!
+//! A scene that reads from feeds is polled once, here, before anything is
+//! drawn: a page of readings is only worth looking at with real numbers on it.
+//! `PULT_HOUR=3` draws it as the forecast three hours out, the way the big
+//! knob would.
 
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use pult::config::{self, Config};
+use pult::feed;
 use pult::render::{Frame, Renderer};
+use pult::values::Bindings;
 use anyhow::{Context, Result};
 use image::{Rgb, RgbImage};
 
@@ -29,6 +37,34 @@ fn main() -> Result<()> {
         .scene(&scene_name)
         .with_context(|| format!("no scene named {scene_name:?}"))?;
 
+    // Polled on this thread and once only: there is no loop here to wait for
+    // a poller, and a preview that drew em dashes would be a preview of
+    // nothing.
+    let mut bindings = Bindings::new();
+    let places = feed::places();
+    for (name, spec) in &config.feeds {
+        bindings.declare(name, spec.stale_after());
+        let polled = spec
+            .target(&places)
+            .and_then(|target| feed::poll(spec, &target, SystemTime::now()));
+        match polled {
+            Ok(sample) => {
+                println!("feed    : {name} gave {} fields", sample.fields.len());
+                bindings.put(name, sample);
+            }
+            Err(e) => {
+                eprintln!("feed    : {name} did not answer: {e:#}");
+                bindings.fail(name, format!("{e:#}"));
+            }
+        }
+    }
+
+    let hours: i32 = std::env::var("PULT_HOUR")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let now = SystemTime::now();
+
     let (rows, cols) = (2u32, 3u32);
     let per_page = (rows * cols) as usize;
     let pages = scene.pages(per_page);
@@ -47,9 +83,12 @@ fn main() -> Result<()> {
         };
         let frame = Frame {
             pages: marker,
+            hour: (hours != 0).then_some((hours.unsigned_abs() as usize, 24)),
             ..Frame::default()
         };
-        let image = renderer.key_frame(spec, frame)?.to_rgb8();
+        let image = renderer
+            .reading(spec, &bindings, now, hours, frame)?
+            .to_rgb8();
         let (row, col) = (index / cols, index % cols);
         let (ox, oy) = (
             GAP + col * (key + GAP),

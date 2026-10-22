@@ -10,21 +10,38 @@ use image::{DynamicImage, Rgb, Rgba, RgbImage, RgbaImage};
 use resvg::tiny_skia::{Pixmap, Transform};
 use resvg::usvg;
 
+use std::time::SystemTime;
+
 use crate::config::{Animation, Key};
 use crate::icons;
+use crate::values::Bindings;
 
-/// The face key labels are drawn in, carried in the binary.
-///
-/// Inter (SIL Open Font License, see `assets/fonts/LICENSE`): drawn for
-/// interfaces, legible at the size a 60 px key allows, and with the whole of
-/// Latin Extended-A, which the Serbian alphabet needs. Embedding it also means
-/// the dock looks the same whatever fonts a Mac happens to have, and that the
-/// keys and the app share a typeface.
+// The face key labels are drawn in is carried in the binary: Inter (SIL Open
+// Font License, see `assets/fonts/LICENSE`). Drawn for interfaces, legible at
+// the size a 60 px key allows, and carrying the whole of Latin Extended-A,
+// which the Serbian alphabet needs. Embedding it also means the dock looks the
+// same whatever fonts a Mac happens to have, and that the keys and the app
+// share a typeface.
 
 /// Label sizes to try, largest first; the first that fits in two lines wins.
 const LABEL_SIZES: &[f32] = &[18.0, 16.0, 14.0, 12.0, 11.0, 10.0, 9.0];
 
-const DEFAULT_BACKGROUND: Rgb<u8> = Rgb([24, 26, 31]);
+/// Sizes a reading is tried at, largest first.
+///
+/// Chosen by measuring rather than by taste: 54 px of usable width holds three
+/// comfortable glyphs at 34 px ("12°" measures 52) and five at 20 ("15:21"
+/// measures 50). Six never fit, which is why `%` lives in the caption.
+const VALUE_SIZES: &[f32] = &[34.0, 30.0, 26.0, 22.0, 20.0, 18.0];
+/// The line under a reading, saying what the reading is.
+const CAPTION_SIZE: f32 = 10.0;
+/// Height reserved for that line, icon included.
+const CAPTION_BAND: i32 = 13;
+/// The icon beside a caption. Small on purpose: on a readout the number is the
+/// subject and the glyph is the footnote.
+const CAPTION_ICON: u32 = 10;
+
+/// What a key is painted when nothing says otherwise.
+pub const DEFAULT_BACKGROUND: Rgb<u8> = Rgb([24, 26, 31]);
 const MARGIN: i32 = 3;
 /// Height reserved for a label drawn under an icon.
 const LABEL_BAND: i32 = 15;
@@ -38,6 +55,129 @@ pub struct Frame {
     pub press: f32,
     /// Which page of how many, when the scene has more than one.
     pub pages: Option<(usize, usize)>,
+    /// Which hour of how many, when the scene is being scrubbed.
+    pub hour: Option<(usize, usize)>,
+}
+
+/// A key's reading, as the daemon worked it out this tick.
+///
+/// Everything here is already resolved: the templates are filled, the ramp has
+/// chosen its colour and the staleness is decided. The renderer's job is the
+/// pixels, so that none of the arithmetic happens twice.
+#[derive(Debug, Clone)]
+pub struct Readout {
+    /// The number, drawn as large as it measures.
+    pub value: String,
+    /// The line under it. When a feed has gone stale this is its age.
+    pub caption: String,
+    /// A small icon beside the caption, already resolved from its template.
+    pub icon: Option<String>,
+    /// Degrees to turn that icon, so an arrow can point at the wind.
+    pub icon_rotate: f32,
+    pub background: Rgb<u8>,
+    /// The key's own text colour, when it set one.
+    pub foreground: Option<Rgb<u8>>,
+    /// False once the reading is past its feed's `stale_after`.
+    pub fresh: bool,
+}
+
+impl Readout {
+    /// A key's reading, resolved from what the feeds have last said.
+    ///
+    /// The caller has already chosen which of the key's readings this is;
+    /// everything else — the templates, the ramp, the staleness — is settled
+    /// here, so none of that arithmetic happens twice per frame.
+    pub fn of(key: &Key, bindings: &Bindings, now: SystemTime, hours: i32) -> Readout {
+        let value = key
+            .value
+            .as_deref()
+            .map(|template| bindings.resolve(template, now, hours));
+        let fresh = value.as_ref().map(|resolved| resolved.fresh).unwrap_or(true);
+
+        let caption = if fresh {
+            key.caption
+                .as_deref()
+                .map(|template| bindings.resolve(template, now, hours).text)
+                .unwrap_or_default()
+        } else {
+            // A stale reading says how old it is in place of what it is. The
+            // number has not changed; how far behind it is, has.
+            bindings.age_caption(key.value.as_deref().unwrap_or_default(), now)
+        };
+
+        let background = key
+            .ramp
+            .as_ref()
+            .and_then(|ramp| {
+                bindings
+                    .number(&ramp.field, now, hours)
+                    .and_then(|value| ramp.color(value))
+            })
+            .or_else(|| key.color.as_deref().and_then(|color| parse_color(color).ok()))
+            .unwrap_or(DEFAULT_BACKGROUND);
+
+        Readout {
+            value: value.map(|resolved| resolved.text).unwrap_or_default(),
+            caption,
+            icon: key
+                .icon
+                .as_deref()
+                .map(|template| bindings.resolve(template, now, hours).text)
+                .filter(known_icon),
+            icon_rotate: key
+                .icon_rotate
+                .as_deref()
+                .and_then(|template| bindings.resolve(template, now, hours).text.parse().ok())
+                .unwrap_or(0.0),
+            background,
+            foreground: key
+                .text_color
+                .as_deref()
+                .and_then(|color| parse_color(color).ok()),
+            fresh,
+        }
+    }
+}
+
+/// The key as it can be drawn now, with every template filled in.
+///
+/// For the keys that are not readings: a label, an icon or a rotation may
+/// still come from a feed. A key with nothing live about it is returned as it
+/// was written, which is almost all of them.
+pub fn fill(key: &Key, bindings: &Bindings, now: SystemTime, hours: i32) -> Key {
+    if !key.live() {
+        return key.clone();
+    }
+
+    let text = |template: &str| bindings.resolve(template, now, hours).text;
+    Key {
+        label: text(&key.label),
+        icon: key.icon.as_deref().map(text).filter(known_icon),
+        icon_rotate: key.icon_rotate.as_deref().map(text),
+        ..key.clone()
+    }
+}
+
+/// Whether a name resolved from a feed is one this renderer can draw.
+///
+/// A feed can produce anything, and an unknown icon makes the renderer refuse
+/// the whole key. Dropping it here costs the glyph and keeps the number.
+fn known_icon(name: &String) -> bool {
+    icons::get(name).is_some() || Path::new(name).exists()
+}
+
+impl Default for Readout {
+    fn default() -> Readout {
+        Readout {
+            value: String::new(),
+            caption: String::new(),
+            icon: None,
+            icon_rotate: 0.0,
+            background: DEFAULT_BACKGROUND,
+            foreground: None,
+            fresh: true,
+        }
+    }
 }
 
 impl Frame {
@@ -128,8 +268,153 @@ impl Renderer {
         if let Some((page, pages)) = frame.pages {
             draw_page_strip(&mut canvas, page, pages, foreground);
         }
+        if let Some((hour, span)) = frame.hour {
+            draw_hour_track(&mut canvas, hour, span, foreground);
+        }
 
         Ok(DynamicImage::ImageRgb8(canvas))
+    }
+
+    /// Renders a key as the feeds have it now, whichever way it draws.
+    ///
+    /// One place decides between a reading and an ordinary key, so the dock
+    /// and the preview cannot come to different conclusions about which a
+    /// given key is.
+    pub fn reading(
+        &self,
+        key: &Key,
+        bindings: &Bindings,
+        now: SystemTime,
+        hours: i32,
+        frame: Frame,
+    ) -> Result<DynamicImage> {
+        if key.reads() {
+            let readout = Readout::of(key, bindings, now, hours);
+            // A reading with no number of its own falls through to the
+            // ordinary key: that is the sky key, an icon and a line of text.
+            if !readout.value.is_empty() {
+                return self.readout(&readout, frame);
+            }
+        }
+        self.key_frame(&fill(key, bindings, now, hours), frame)
+    }
+
+    /// Renders a key that reports a number.
+    ///
+    /// The number is the key, so it is drawn as large as it measures with a
+    /// caption under it saying what it is. Nothing wraps: a reading that needed
+    /// two lines would not be readable across a desk anyway.
+    pub fn readout(&self, readout: &Readout, frame: Frame) -> Result<DynamicImage> {
+        let (w, h) = self.size;
+
+        let mut background = readout.background;
+        if frame.press > 0.0 {
+            background = mix(background, Rgb([255, 255, 255]), 0.40 * frame.press);
+        }
+        let mut foreground = readout.foreground.unwrap_or_else(|| contrasting(background));
+
+        // A stale reading is dimmed, never hidden. The number is still
+        // information; a blank key is not, and a bright one would be a lie.
+        if !readout.fresh {
+            background = scale_color(background, 0.45);
+            foreground = scale_color(foreground, 0.45);
+        }
+
+        let mut canvas = RgbImage::from_pixel(w, h, background);
+        let room = w as f32 - 2.0 * MARGIN as f32;
+        let band = if readout.caption.is_empty() && readout.icon.is_none() {
+            0
+        } else {
+            CAPTION_BAND
+        };
+
+        if !readout.value.is_empty() {
+            let scale = self.value_scale(&readout.value, room);
+            let x = (w as f32 - self.tabular_width(&readout.value, scale)) / 2.0;
+            let field = (h as i32 - band) as f32;
+            let baseline = self.centred(&readout.value, scale, field);
+            self.draw_glyphs(
+                &mut canvas,
+                &readout.value,
+                (x, baseline),
+                scale,
+                foreground,
+                true,
+            );
+        }
+
+        if band > 0 {
+            self.draw_caption(&mut canvas, readout, band, foreground)?;
+        }
+
+        if let Some((page, pages)) = frame.pages {
+            draw_page_strip(&mut canvas, page, pages, foreground);
+        }
+        if let Some((hour, span)) = frame.hour {
+            draw_hour_track(&mut canvas, hour, span, foreground);
+        }
+
+        Ok(DynamicImage::ImageRgb8(canvas))
+    }
+
+    /// The largest size at which this reading fits on one line.
+    fn value_scale(&self, value: &str, room: f32) -> PxScale {
+        for &size in VALUE_SIZES {
+            let scale = PxScale::from(size);
+            if self.tabular_width(value, scale) <= room {
+                return scale;
+            }
+        }
+        // Nothing fits, so the smallest is drawn and clipped: a reading cut
+        // off still says which way the number is going.
+        PxScale::from(*VALUE_SIZES.last().unwrap())
+    }
+
+    /// Draws the caption band: a small icon, then the words.
+    fn draw_caption(
+        &self,
+        canvas: &mut RgbImage,
+        readout: &Readout,
+        band: i32,
+        color: Rgb<u8>,
+    ) -> Result<()> {
+        let (w, h) = (canvas.width() as i32, canvas.height() as i32);
+        let scale = PxScale::from(CAPTION_SIZE);
+        let text_width = self.width(&readout.caption, scale);
+
+        let icon_width = match &readout.icon {
+            Some(_) if !readout.caption.is_empty() => CAPTION_ICON as i32 + 2,
+            Some(_) => CAPTION_ICON as i32,
+            None => 0,
+        };
+        let total = icon_width as f32 + text_width;
+        let mut x = ((w as f32 - total) / 2.0).max(MARGIN as f32);
+        let top = h - band;
+
+        if let Some(icon) = &readout.icon {
+            let sprite = self.rasterise(icon, CAPTION_ICON, color, readout.icon_rotate, 1.0)?;
+            let y0 = top + (band - CAPTION_ICON as i32) / 2;
+            for (sx, sy, px) in sprite.enumerate_pixels() {
+                let alpha = f32::from(px[3]) / 255.0;
+                if alpha > 0.0 {
+                    blend(
+                        canvas,
+                        x as i32 + sx as i32,
+                        y0 + sy as i32,
+                        Rgb([px[0], px[1], px[2]]),
+                        alpha,
+                    );
+                }
+            }
+            x += icon_width as f32;
+        }
+
+        if !readout.caption.is_empty() {
+            let baseline = top as f32 + self.centred(&readout.caption, scale, band as f32);
+            self.draw_line(canvas, &readout.caption, x, baseline, scale, color);
+        }
+
+        Ok(())
     }
 
     /// Background colour for this moment: `blink` drives it, and a press
@@ -288,13 +573,41 @@ impl Renderer {
         scale: PxScale,
         color: Rgb<u8>,
     ) {
+        self.draw_glyphs(canvas, text, (x, baseline), scale, color, false);
+    }
+
+    /// Draws a line, optionally giving every digit the same advance.
+    ///
+    /// Inter's figures are proportional — `1` measures 0.349 em against `0` at
+    /// 0.545 — so a reading going from 11 to 12 would shift sideways under
+    /// your eye, which on a number that updates reads as the dock twitching.
+    /// The face has tabular figures, but reaching them needs OpenType feature
+    /// application that this renderer does not do, so the advance is equalised
+    /// here and each digit is centred in its own slot.
+    fn draw_glyphs(
+        &self,
+        canvas: &mut RgbImage,
+        text: &str,
+        at: (f32, f32),
+        scale: PxScale,
+        color: Rgb<u8>,
+        tabular: bool,
+    ) {
+        let (x, baseline) = at;
         let font = self.font.as_scaled(scale);
+        let slot = tabular.then(|| self.digit_advance(scale));
         let mut caret = x;
 
         for ch in text.chars() {
             let id = font.glyph_id(ch);
-            let glyph = id.with_scale_and_position(scale, ab_glyph::point(caret, baseline));
-            caret += font.h_advance(id);
+            let advance = font.h_advance(id);
+            let (step, offset) = match slot {
+                Some(slot) if ch.is_ascii_digit() => (slot, (slot - advance) / 2.0),
+                _ => (advance, 0.0),
+            };
+            let glyph =
+                id.with_scale_and_position(scale, ab_glyph::point(caret + offset, baseline));
+            caret += step;
 
             if let Some(outline) = font.outline_glyph(glyph) {
                 let bounds = outline.px_bounds();
@@ -313,9 +626,68 @@ impl Renderer {
         }
     }
 
+    /// The baseline that centres this text's own ink in a field `height` tall.
+    ///
+    /// Measured rather than taken from the face's metrics. A reading has no
+    /// descenders to balance, so centring on the line height sits it visibly
+    /// high — and `°` reaches above the cap line, which no metric reports.
+    fn centred(&self, text: &str, scale: PxScale, height: f32) -> f32 {
+        match self.ink(text, scale) {
+            Some((top, bottom)) => (height - (bottom - top)) / 2.0 - top,
+            None => {
+                let font = self.font.as_scaled(scale);
+                (height - font.height()) / 2.0 + font.ascent()
+            }
+        }
+    }
+
+    /// How far this text's ink reaches above and below the baseline.
+    fn ink(&self, text: &str, scale: PxScale) -> Option<(f32, f32)> {
+        let font = self.font.as_scaled(scale);
+        let mut top = f32::INFINITY;
+        let mut bottom = f32::NEG_INFINITY;
+        let mut caret = 0.0;
+
+        for ch in text.chars() {
+            let id = font.glyph_id(ch);
+            let glyph = id.with_scale_and_position(scale, ab_glyph::point(caret, 0.0));
+            caret += font.h_advance(id);
+            if let Some(outline) = font.outline_glyph(glyph) {
+                let bounds = outline.px_bounds();
+                top = top.min(bounds.min.y);
+                bottom = bottom.max(bounds.max.y);
+            }
+        }
+
+        (top.is_finite() && bottom.is_finite()).then_some((top, bottom))
+    }
+
     fn width(&self, text: &str, scale: PxScale) -> f32 {
         let font = self.font.as_scaled(scale);
         text.chars().map(|c| font.h_advance(font.glyph_id(c))).sum()
+    }
+
+    /// The advance every digit is given, which is the widest of them.
+    fn digit_advance(&self, scale: PxScale) -> f32 {
+        let font = self.font.as_scaled(scale);
+        ('0'..='9')
+            .map(|c| font.h_advance(font.glyph_id(c)))
+            .fold(0.0, f32::max)
+    }
+
+    /// How wide this text is once the digits are equalised.
+    fn tabular_width(&self, text: &str, scale: PxScale) -> f32 {
+        let font = self.font.as_scaled(scale);
+        let slot = self.digit_advance(scale);
+        text.chars()
+            .map(|c| {
+                if c.is_ascii_digit() {
+                    slot
+                } else {
+                    font.h_advance(font.glyph_id(c))
+                }
+            })
+            .sum()
     }
 }
 
@@ -342,6 +714,41 @@ fn draw_page_strip(canvas: &mut RgbImage, page: usize, pages: usize, color: Rgb<
         for x in x0.round() as i32..(x0 + segment).round() as i32 {
             for y in 0..2 {
                 blend(canvas, x, y, color, alpha);
+            }
+        }
+    }
+}
+
+/// Draws the forecast scrub: a dim track along the top of every key, with a
+/// bright tick at the hour being read.
+///
+/// Not the page strip. Twenty-four segments across a 60 px key work out at
+/// 0.42 px each, which rounds away to nothing; a continuous track with a tick
+/// says the same thing and survives the arithmetic. The tick is placed and
+/// covered fractionally, so an hour never snaps to the wrong pixel.
+fn draw_hour_track(canvas: &mut RgbImage, hour: usize, span: usize, color: Rgb<u8>) {
+    const TICK: f32 = 5.0;
+    if span < 2 {
+        return;
+    }
+
+    let width = canvas.width() as f32;
+    for x in 0..canvas.width() as i32 {
+        for y in 0..2 {
+            blend(canvas, x, y, color, 0.14);
+        }
+    }
+
+    let fraction = (hour as f32 / (span - 1) as f32).clamp(0.0, 1.0);
+    let start = fraction * (width - TICK);
+    let end = start + TICK;
+    for x in start.floor() as i32..=end.ceil() as i32 {
+        let left = (x as f32).max(start);
+        let right = ((x + 1) as f32).min(end);
+        let coverage = (right - left).clamp(0.0, 1.0);
+        if coverage > 0.0 {
+            for y in 0..2 {
+                blend(canvas, x, y, color, 0.95 * coverage);
             }
         }
     }
@@ -439,7 +846,7 @@ fn scale_color(color: Rgb<u8>, factor: f32) -> Rgb<u8> {
     Rgb(color.0.map(|c| (f32::from(c) * factor).round().clamp(0.0, 255.0) as u8))
 }
 
-fn mix(a: Rgb<u8>, b: Rgb<u8>, t: f32) -> Rgb<u8> {
+pub fn mix(a: Rgb<u8>, b: Rgb<u8>, t: f32) -> Rgb<u8> {
     let t = t.clamp(0.0, 1.0);
     let mut out = [0u8; 3];
     for i in 0..3 {
@@ -483,6 +890,114 @@ mod tests {
         assert_eq!(lines, vec!["one two", "three"]);
     }
 
+    /// Mean brightness of the ink, so two renders can be compared.
+    fn luma(image: &DynamicImage) -> f32 {
+        let image = image.to_rgb8();
+        let total: f32 = image
+            .pixels()
+            .map(|p| 0.299 * f32::from(p[0]) + 0.587 * f32::from(p[1]) + 0.114 * f32::from(p[2]))
+            .sum();
+        total / image.pixels().len() as f32
+    }
+
+    #[test]
+    fn a_reading_is_drawn_as_large_as_it_measures() {
+        let renderer = Renderer::new(None, (60, 60)).expect("a renderer");
+        let room = 60.0 - 2.0 * MARGIN as f32;
+
+        // Three glyphs take the top of the ladder, which is the whole point of
+        // the ladder: a temperature should be readable across a desk.
+        assert_eq!(renderer.value_scale("12°", room).y, 34.0);
+        assert_eq!(renderer.value_scale("5.8", room).y, 34.0);
+
+        // Equalised digits are wider than the face's own, so a number keeps
+        // the same width as it changes.
+        let scale = PxScale::from(34.0);
+        assert!(renderer.tabular_width("11", scale) == renderer.tabular_width("12", scale));
+        assert!(renderer.tabular_width("11", scale) > renderer.width("11", scale));
+
+        // Five land lower, and every size on the ladder must actually fit.
+        let five = renderer.value_scale("15:21", room).y;
+        assert!((20.0..=22.0).contains(&five), "five glyphs landed at {five}");
+        for text in ["12°", "5.8", "15:21", "-12", "100"] {
+            let scale = renderer.value_scale(text, room);
+            assert!(
+                renderer.tabular_width(text, scale) <= room,
+                "{text:?} at {} overflows the key",
+                scale.y
+            );
+        }
+    }
+
+    #[test]
+    fn a_stale_reading_is_dimmer_but_still_there() {
+        let renderer = Renderer::new(None, (60, 60)).expect("a renderer");
+        let reading = Readout {
+            value: "12°".into(),
+            caption: "oseća 10°".into(),
+            background: Rgb([30, 80, 140]),
+            ..Readout::default()
+        };
+        let fresh = renderer.readout(&reading, Frame::default()).expect("fresh");
+        let stale = renderer
+            .readout(
+                &Readout {
+                    fresh: false,
+                    ..reading.clone()
+                },
+                Frame::default(),
+            )
+            .expect("stale");
+
+        assert!(luma(&stale) < luma(&fresh), "a stale reading is dimmed");
+        // And it is still a reading, not a blanked key: the number is the one
+        // thing that must survive a host going quiet.
+        let blank = renderer
+            .readout(
+                &Readout {
+                    value: String::new(),
+                    caption: String::new(),
+                    ..reading
+                },
+                Frame::default(),
+            )
+            .expect("blank");
+        assert!(luma(&stale) != luma(&blank));
+    }
+
+    #[test]
+    fn the_hour_track_draws_where_a_page_strip_would_vanish() {
+        // Twenty-four segments across 60 px is 0.42 px each, so the strip
+        // refuses to draw. This is the case the track exists for.
+        let mut canvas = RgbImage::from_pixel(60, 60, Rgb([0, 0, 0]));
+        draw_page_strip(&mut canvas, 3, 24, Rgb([255, 255, 255]));
+        assert!(
+            canvas.pixels().all(|p| p[0] == 0),
+            "a 24-page strip cannot be drawn"
+        );
+
+        let mut canvas = RgbImage::from_pixel(60, 60, Rgb([0, 0, 0]));
+        draw_hour_track(&mut canvas, 3, 24, Rgb([255, 255, 255]));
+        let top: Vec<u8> = (0..60).map(|x| canvas.get_pixel(x, 0)[0]).collect();
+        assert!(top.iter().any(|v| *v > 200), "the tick is bright");
+        assert!(
+            top.iter().filter(|v| **v > 0 && **v < 100).count() > 40,
+            "and the rest is a dim track"
+        );
+
+        // The tick moves with the hour, and never off the key.
+        let position = |hour: usize| {
+            let mut canvas = RgbImage::from_pixel(60, 60, Rgb([0, 0, 0]));
+            draw_hour_track(&mut canvas, hour, 24, Rgb([255, 255, 255]));
+            (0..60)
+                .max_by_key(|x| canvas.get_pixel(*x, 0)[0])
+                .expect("a brightest pixel")
+        };
+        assert!(position(0) < position(12), "it moves forward");
+        assert!(position(12) < position(23));
+        assert!(position(23) < 60);
+    }
+
     #[test]
     fn every_bundled_icon_renders() {
         for name in icons::names() {
@@ -494,3 +1009,4 @@ mod tests {
         }
     }
 }
+

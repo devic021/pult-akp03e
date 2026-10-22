@@ -10,6 +10,7 @@ use image::Rgb;
 use serde::{Deserialize, Serialize};
 
 use crate::canvas::{k, Style};
+use crate::feed::Feed;
 
 /// Starter config written on first run, so the daemon has something to show.
 pub const EXAMPLE: &str = include_str!("../config.example.toml");
@@ -34,6 +35,10 @@ pub struct Config {
     /// What the dock does when nobody has touched the Mac for a while.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idle: Option<Idle>,
+    /// Numbers fetched from somewhere else, by name. A key reads one through
+    /// a template, so a page of live data costs config rather than code.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub feeds: BTreeMap<String, Feed>,
     pub scenes: BTreeMap<String, Scene>,
 }
 
@@ -481,11 +486,191 @@ pub struct Key {
     /// Icon colour; follows the label when unset.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon_color: Option<String>,
+    /// Turns the icon, in degrees. A template, so an arrow can point at the
+    /// wind rather than at a number somebody typed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_rotate: Option<String>,
     /// Movement to give the key while its scene is showing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub animate: Option<Animation>,
+    /// The reading this key shows, as a template: `{vreme.temp|round}°`.
+    /// A key with a value draws the value large and the label not at all.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// The line under the value, which says what the value is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    /// A background chosen by the reading itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ramp: Option<Ramp>,
+    /// The other things this key can show. Pressing it moves to the next and
+    /// repaints that one key, which is 1.2 ms.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cycle: Vec<KeyView>,
     #[serde(flatten)]
     pub action: Action,
+}
+
+fn gather(text: &str, names: &mut Vec<String>) {
+    for name in crate::values::feeds_named(text) {
+        if !names.iter().any(|seen| seen == name) {
+            names.push(name.to_string());
+        }
+    }
+}
+
+/// A colour chosen by a number, so the key's own background is a reading.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Ramp {
+    /// What to read, as `feed.field`.
+    pub field: String,
+    /// Breakpoints, each a value and a colour. Between two stops the colour is
+    /// mixed; outside the ends it holds, because a temperature off the scale is
+    /// still that end of the scale.
+    pub stops: Vec<(f64, String)>,
+}
+
+impl Ramp {
+    /// A ramp that cannot be read is refused rather than guessed: a colour is
+    /// not a number to clamp, and stops out of order mix backwards.
+    pub fn check(&self) -> Result<()> {
+        if self.stops.is_empty() {
+            bail!("a ramp on {:?} has no stops", self.field);
+        }
+        let mut last = f64::NEG_INFINITY;
+        for (value, colour) in &self.stops {
+            crate::render::parse_color(colour)
+                .with_context(|| format!("in the ramp on {:?}", self.field))?;
+            if *value < last {
+                bail!(
+                    "the ramp on {:?} steps back to {value} after {last}; stops run upwards",
+                    self.field
+                );
+            }
+            last = *value;
+        }
+        Ok(())
+    }
+
+    /// The colour this ramp gives `value`.
+    ///
+    /// Outside the ends it holds: a temperature past the last stop is still
+    /// that end of the scale, and wrapping round to the cold colour would read
+    /// as a fault.
+    pub fn color(&self, value: f64) -> Option<Rgb<u8>> {
+        let first = self.stops.first()?;
+        if value <= first.0 {
+            return crate::render::parse_color(&first.1).ok();
+        }
+        for pair in self.stops.windows(2) {
+            let (low, high) = (&pair[0], &pair[1]);
+            if value <= high.0 {
+                let span = high.0 - low.0;
+                let t = if span > 0.0 { (value - low.0) / span } else { 1.0 };
+                let low = crate::render::parse_color(&low.1).ok()?;
+                let high = crate::render::parse_color(&high.1).ok()?;
+                return Some(crate::render::mix(low, high, t as f32));
+            }
+        }
+        let last = self.stops.last()?;
+        crate::render::parse_color(&last.1).ok()
+    }
+}
+
+/// One of the things a key can show.
+///
+/// The reading travels as a whole: `value`, `caption` and `ramp` come from the
+/// member and are not inherited, because a caption describes the number above
+/// it and a ramp colours that number. Inheriting either is how a key ends up
+/// labelling humidity as a temperature. Everything else — the label, the icon,
+/// the colours — is the key's identity and stays put.
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct KeyView {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caption: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ramp: Option<Ramp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon_rotate: Option<String>,
+}
+
+impl Key {
+    /// Whether this key is a readout rather than a button.
+    ///
+    /// A readout's press changes what it shows and fires no action: a key that
+    /// both reports and acts is a key nobody dares to press.
+    pub fn reads(&self) -> bool {
+        self.value.is_some() || !self.cycle.is_empty()
+    }
+
+    /// Whether anything this key shows comes from a feed.
+    ///
+    /// Checked for a brace rather than by parsing: this runs for every key on
+    /// every pass of the loop, and the answer is no for almost all of them.
+    pub fn live(&self) -> bool {
+        if self.reads() {
+            return true;
+        }
+        if self.label.contains('{') {
+            return true;
+        }
+        [&self.icon, &self.icon_rotate]
+            .into_iter()
+            .flatten()
+            .any(|text| text.contains('{'))
+    }
+
+    /// How many things this key can show.
+    pub fn views(&self) -> usize {
+        self.cycle.len() + 1
+    }
+
+    /// Every feed this key reads: its cycle, its ramp and its templates.
+    pub fn feeds(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for index in 0..self.views() {
+            let view = self.view(index);
+            for text in [&view.value, &view.caption, &view.icon, &view.icon_rotate]
+                .into_iter()
+                .flatten()
+            {
+                gather(text, &mut names);
+            }
+            if let Some(ramp) = &view.ramp {
+                // A ramp names its field directly: the same grammar with the
+                // braces left off.
+                gather(&format!("{{{}}}", ramp.field), &mut names);
+            }
+        }
+        names
+    }
+
+    /// The key as its `index`th view shows it, wrapping round.
+    pub fn view(&self, index: usize) -> Key {
+        let Some(overlay) = index
+            .checked_rem(self.views())
+            .and_then(|index| index.checked_sub(1))
+            .and_then(|index| self.cycle.get(index))
+        else {
+            return self.clone();
+        };
+
+        Key {
+            value: overlay.value.clone(),
+            caption: overlay.caption.clone(),
+            ramp: overlay.ramp.clone(),
+            icon: overlay.icon.clone().or_else(|| self.icon.clone()),
+            icon_rotate: overlay
+                .icon_rotate
+                .clone()
+                .or_else(|| self.icon_rotate.clone()),
+            ..self.clone()
+        }
+    }
 }
 
 impl Scene {
@@ -563,6 +748,21 @@ pub struct Action {
     /// Move through a scene's pages: `next`, `prev` or `first`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<Page>,
+    /// Move the whole scene through the forecast: `next`, `prev` or `now`.
+    ///
+    /// Scene-wide and not per key: scrubbing one key out of six would leave
+    /// five numbers from a different hour sitting beside it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hour: Option<Hour>,
+}
+
+/// Which hour the keys read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Hour {
+    Next,
+    Prev,
+    Now,
 }
 
 /// Which page of a scene to show.
@@ -586,6 +786,7 @@ impl Action {
             + usize::from(self.scene.is_some())
             + usize::from(self.volume.is_some())
             + usize::from(self.page.is_some())
+            + usize::from(self.hour.is_some())
     }
 }
 
@@ -661,6 +862,19 @@ impl Config {
         }
 
         for (name, scene) in &self.scenes {
+            for (index, key) in scene.keys.iter().enumerate() {
+                for feed in key.feeds() {
+                    if !self.feeds.contains_key(&feed) {
+                        missing.push(format!(
+                            "scene {name:?} key {index} reads feed {feed:?}, which is not \
+                             configured; that key will show an em dash"
+                        ));
+                    }
+                }
+            }
+        }
+
+        for (name, scene) in &self.scenes {
             let Some(source) = scene.canvas().and_then(|surface| surface.source.as_ref()) else {
                 continue;
             };
@@ -701,6 +915,11 @@ impl Config {
             // reported when it is reached, and the dock keeps its last frame.
         }
 
+        for (name, feed) in &self.feeds {
+            feed.check()
+                .with_context(|| format!("in feed {name:?}"))?;
+        }
+
         for (name, scene) in &self.scenes {
             if scene.buttons.len() > 3 {
                 bail!(
@@ -736,7 +955,27 @@ impl Config {
             }
 
             for key in &scene.keys {
+                if key.reads() && key.action.count() > 0 {
+                    bail!(
+                        "scene {name:?} has a key that both reports and acts; a press can \
+                         only do one of the two, so it changes what the key shows"
+                    );
+                }
+
+                for ramp in [&key.ramp]
+                    .into_iter()
+                    .chain(key.cycle.iter().map(|view| &view.ramp))
+                    .flatten()
+                {
+                    ramp.check().with_context(|| format!("in scene {name:?}"))?;
+                }
+
                 if let Some(icon) = &key.icon {
+                    // An icon that is a template is only known once a feed has
+                    // answered, so the name cannot be checked now.
+                    if icon.contains('{') {
+                        continue;
+                    }
                     if crate::icons::get(icon).is_none() && !Path::new(icon).exists() {
                         bail!(
                             "scene {name:?} uses icon {icon:?}, which is neither bundled \
@@ -928,6 +1167,168 @@ mod tests {
         assert!(matches_app("com.apple.safari", "com.apple.Safari"));
         assert!(matches_app("com.adobe.*", "com.adobe.Photoshop"));
         assert!(!matches_app("com.adobe.*", "com.apple.Safari"));
+    }
+
+    /// The weather page, cut down to the parts under test.
+    const PAGE: &str = r##"
+default = "vreme"
+
+[feeds.vreme]
+kind = "http"
+url = "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m"
+every = "15m"
+stale_after = "2h"
+require = ["/current/temperature_2m"]
+
+[feeds.vreme.map]
+temp = "/current/temperature_2m"
+hum = "/current/relative_humidity_2m"
+rain6 = "max:/hourly/precipitation_probability[0:6]"
+temp_h = { series = "/hourly/temperature_2m", axis = "/hourly/time", for = "temp" }
+
+[[scenes.vreme.keys]]
+value = "{vreme.temp|round}°"
+caption = "oseća {vreme.feels|round}°"
+icon = "thermometer"
+ramp = { field = "vreme.temp", stops = [[-5, "#1f6feb"], [24, "#9a6700"]] }
+cycle = [
+  { value = "{vreme.hum|round}", caption = "% vlage" },
+]
+
+[[scenes.vreme.encoders]]
+cw = { hour = "next" }
+ccw = { hour = "prev" }
+press = { hour = "now" }
+"##;
+
+    #[test]
+    fn a_page_of_live_data_survives_a_round_trip() {
+        let original: Config = toml::from_str(PAGE).expect("parses");
+        original.validate().expect("validates");
+
+        let text = toml::to_string_pretty(&original).expect("serialises");
+        let again: Config = toml::from_str(&text).expect("reparses");
+        again.validate().expect("still valid");
+
+        let feed = &again.feeds["vreme"];
+        assert_eq!(feed.require, vec!["/current/temperature_2m".to_string()]);
+        assert_eq!(feed.map.len(), 4);
+
+        let key = &again.scenes["vreme"].keys[0];
+        assert_eq!(key.value.as_deref(), Some("{vreme.temp|round}°"));
+        assert_eq!(key.cycle.len(), 1);
+        assert_eq!(
+            again.scenes["vreme"].encoders[0].cw.hour,
+            Some(Hour::Next),
+            "the knob still scrubs the forecast"
+        );
+        assert_eq!(key.feeds(), vec!["vreme".to_string()]);
+    }
+
+    #[test]
+    fn a_cycle_member_carries_its_whole_reading() {
+        let config: Config = toml::from_str(PAGE).expect("parses");
+        let key = &config.scenes["vreme"].keys[0];
+
+        assert_eq!(key.views(), 2);
+        assert!(key.reads());
+
+        let first = key.view(0);
+        assert_eq!(first.value.as_deref(), Some("{vreme.temp|round}°"));
+        assert!(first.ramp.is_some());
+
+        let second = key.view(1);
+        assert_eq!(second.value.as_deref(), Some("{vreme.hum|round}"));
+        assert_eq!(second.caption.as_deref(), Some("% vlage"));
+        // The reading travels whole: humidity must not inherit a ramp built
+        // for a temperature, nor the caption that described one.
+        assert!(second.ramp.is_none());
+        // The key's own identity stays put.
+        assert_eq!(second.icon.as_deref(), Some("thermometer"));
+
+        // Pressing past the end comes back round.
+        assert_eq!(key.view(2).value, first.value);
+    }
+
+    #[test]
+    fn a_ramp_holds_at_both_ends_and_mixes_between() {
+        let config: Config = toml::from_str(PAGE).expect("parses");
+        let ramp = config.scenes["vreme"].keys[0].ramp.clone().expect("a ramp");
+
+        assert_eq!(ramp.color(-40.0), ramp.color(-5.0), "it holds below the first");
+        assert_eq!(ramp.color(50.0), ramp.color(24.0), "and above the last");
+
+        let cold = ramp.color(-5.0).unwrap();
+        let warm = ramp.color(24.0).unwrap();
+        let middle = ramp.color(9.5).unwrap();
+        for channel in 0..3 {
+            let (low, high) = (cold[channel].min(warm[channel]), cold[channel].max(warm[channel]));
+            assert!(
+                (low..=high).contains(&middle[channel]),
+                "the middle colour is between its stops"
+            );
+        }
+        assert_ne!(middle, cold);
+    }
+
+    #[test]
+    fn a_feed_or_a_key_that_cannot_work_is_refused_at_load() {
+        let cases = [
+            ("every = \"soon\"", "[feeds.x]\nkind=\"http\"\nurl=\"https://a.invalid\"\nevery=\"soon\""),
+            ("a poll that fast", "[feeds.x]\nkind=\"http\"\nurl=\"https://a.invalid\"\nevery=\"0.5s\""),
+            ("a url that is not one", "[feeds.x]\nkind=\"http\"\nurl=\"a.invalid\""),
+            ("an http feed with no url", "[feeds.x]\nkind=\"http\""),
+            (
+                "a reducer nobody wrote",
+                "[feeds.x]\nkind=\"http\"\nurl=\"https://a.invalid\"\n[feeds.x.map]\na=\"median:/x\"",
+            ),
+            (
+                "require that is not a pointer",
+                "[feeds.x]\nkind=\"http\"\nurl=\"https://a.invalid\"\nrequire=[\"current.temp\"]",
+            ),
+        ];
+        for (what, feed) in cases {
+            let text = format!("default = \"s\"\n{feed}\n[scenes.s]\n");
+            let config: Config = toml::from_str(&text).unwrap_or_else(|e| panic!("{what}: {e}"));
+            assert!(config.validate().is_err(), "{what} must be refused");
+        }
+
+        // A key cannot both report and act: the press can only do one.
+        let both = r#"
+default = "s"
+[[scenes.s.keys]]
+value = "{x.a}"
+run = "open -a Safari"
+"#;
+        let config: Config = toml::from_str(both).expect("parses");
+        assert!(config.validate().is_err());
+
+        // A ramp whose stops run backwards mixes backwards.
+        let backwards = r##"
+default = "s"
+[[scenes.s.keys]]
+value = "{x.a}"
+ramp = { field = "x.a", stops = [[20, "#ffffff"], [5, "#000000"]] }
+"##;
+        let config: Config = toml::from_str(backwards).expect("parses");
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn a_key_reading_a_feed_nobody_configured_is_reported_not_refused() {
+        let text = r#"
+default = "s"
+[[scenes.s.keys]]
+value = "{vazduh.aqi|round}"
+caption = "vazduh"
+"#;
+        let config: Config = toml::from_str(text).expect("parses");
+        // It still runs: the app may be about to add the feed.
+        config.validate().expect("validates");
+
+        let reported = config.missing_files();
+        assert_eq!(reported.len(), 1, "{reported:?}");
+        assert!(reported[0].contains("vazduh"), "{}", reported[0]);
     }
 
     #[test]
