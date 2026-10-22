@@ -49,10 +49,16 @@ enum SelfTest {
         // must carry them through a save untouched, or the first edit from the
         // editor deletes them.
         do {
+            // Every one of these is something a newer daemon, or a hand, could
+            // have written and this build has no case for. `surface` used to be
+            // one opaque blob and survived for free; now that it is typed, what
+            // is at risk is a *knob* inside it — so that is what this asks
+            // about. Same for the screensaver, typed in the same change.
             let sample = """
             {"brightness":70,"poll_ms":300,"press_feedback":true,"default":"general",
              "feeds":{"weather":{"kind":"http","every":900}},
-             "scenes":{"x":{"surface":{"kind":"canvas"},
+             "idle":{"after":"3m","scene":"x","gravity":0.8},
+             "scenes":{"x":{"surface":{"kind":"canvas","effect":"aurora","bands":4,"wobble":0.4},
                             "keys":[{"label":"a","value":"{weather.temp}"}]}}}
             """
             let decoded = try JSONDecoder().decode(Config.self, from: Data(sample.utf8))
@@ -60,15 +66,22 @@ enum SelfTest {
                 with: JSONEncoder().encode(decoded)
             ) as? [String: Any] ?? [:]
 
-            let keptFeeds = again["feeds"] != nil
             let scene = (again["scenes"] as? [String: Any])?["x"] as? [String: Any]
-            let keptSurface = scene?["surface"] != nil
-            let keptValue = ((scene?["keys"] as? [[String: Any]])?.first)?["value"] != nil
+            let surface = scene?["surface"] as? [String: Any]
+            let checks: [(String, Bool)] = [
+                ("feeds", again["feeds"] != nil),
+                ("surface", surface?["effect"] as? String == "aurora"),
+                // A knob this build does know, read and written back as itself.
+                ("knob", (surface?["bands"] as? NSNumber)?.intValue == 4),
+                // And one it has never heard of, which must survive untouched.
+                ("new knob", surface?["wobble"] != nil),
+                ("idle", (again["idle"] as? [String: Any])?["gravity"] != nil),
+                ("value", ((scene?["keys"] as? [[String: Any]])?.first)?["value"] != nil),
+            ]
 
-            print("unknown keys: feeds \(keptFeeds ? "kept" : "LOST"), "
-                + "surface \(keptSurface ? "kept" : "LOST"), "
-                + "value \(keptValue ? "kept" : "LOST")")
-            if !(keptFeeds && keptSurface && keptValue) {
+            print("unknown keys: "
+                + checks.map { "\($0.0) \($0.1 ? "kept" : "LOST")" }.joined(separator: ", "))
+            if checks.contains(where: { !$0.1 }) {
                 failures.append("saving would delete configuration this build does not understand")
             }
         } catch {

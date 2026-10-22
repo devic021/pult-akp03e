@@ -1,22 +1,26 @@
 import SwiftUI
 
 enum Panel: String, CaseIterable, Identifiable {
-    case scenes, device, settings
+    case scenes, animations, screensaver, device, settings
 
     var id: String { rawValue }
     var label: String { T("nav.\(rawValue)") }
 
-    /// ⌘1, ⌘2, ⌘3 — the panes are few and fixed, so they get numbers.
+    /// ⌘1 to ⌘5 — the panes are few and fixed, so they get numbers.
     var shortcut: KeyEquivalent {
         switch self {
         case .scenes: return "1"
-        case .device: return "2"
-        case .settings: return "3"
+        case .animations: return "2"
+        case .screensaver: return "3"
+        case .device: return "4"
+        case .settings: return "5"
         }
     }
     var symbol: String {
         switch self {
         case .scenes: return "square.grid.2x2"
+        case .animations: return "waveform"
+        case .screensaver: return "moon.stars"
         case .device: return "dial.medium"
         case .settings: return "gearshape"
         }
@@ -37,6 +41,8 @@ struct RootView: View {
                 Group {
                     switch state.panel {
                     case .scenes: SceneEditor()
+                    case .animations: AnimationsView()
+                    case .screensaver: ScreensaverView()
                     case .device: DeviceView()
                     case .settings: SettingsView()
                     }

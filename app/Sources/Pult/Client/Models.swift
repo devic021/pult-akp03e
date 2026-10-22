@@ -291,6 +291,85 @@ struct DeckScene: Codable, Equatable {
     }
 }
 
+/// When nobody has touched the Mac for a while, the dock stops being a
+/// controller and becomes something to look at.
+///
+/// Absent means the dock never rests, which is what it did before any of this
+/// existed — so a configuration written then keeps its meaning.
+struct Idle: Codable, Equatable {
+    /// How long since the last keystroke or pointer move: `30s`, `3m`, `1h`.
+    var after: String = "3m"
+    /// The scene to show. Any scene will do; a canvas is the point.
+    var scene: String = ""
+    /// Or a playlist, which wins over `scene`. Each member is a whole scene,
+    /// so each keeps its own motion, colours, geometry and frame rate.
+    var scenes: [String] = []
+    var hold: String?
+    var fade: Double?
+    var fade_in: Double?
+    /// `any` or `dock`.
+    var wake_on: String?
+    var brightness: Int?
+    var dark_when_display_sleeps = false
+    var swallow_first_press = true
+    /// The frame the dock holds while the Mac sleeps. Nothing can animate
+    /// then: the daemon is frozen along with everything else.
+    var sleep_image: String?
+    var extra: [String: JSONValue] = [:]
+
+    enum CodingKeys: String, CodingKey {
+        case after, scene, scenes, hold, fade, fade_in, wake_on, brightness
+        case dark_when_display_sleeps, swallow_first_press, sleep_image
+    }
+
+    private static let known: Set<String> = [
+        "after", "scene", "scenes", "hold", "fade", "fade_in", "wake_on",
+        "brightness", "dark_when_display_sleeps", "swallow_first_press", "sleep_image",
+    ]
+
+    init(scene: String = "") {
+        self.scene = scene
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        after = try values.decodeIfPresent(String.self, forKey: .after) ?? "3m"
+        scene = try values.decodeIfPresent(String.self, forKey: .scene) ?? ""
+        scenes = try values.decodeIfPresent([String].self, forKey: .scenes) ?? []
+        hold = try values.decodeIfPresent(String.self, forKey: .hold)
+        fade = try values.decodeIfPresent(Double.self, forKey: .fade)
+        fade_in = try values.decodeIfPresent(Double.self, forKey: .fade_in)
+        wake_on = try values.decodeIfPresent(String.self, forKey: .wake_on)
+        brightness = try values.decodeIfPresent(Int.self, forKey: .brightness)
+        dark_when_display_sleeps =
+            try values.decodeIfPresent(Bool.self, forKey: .dark_when_display_sleeps) ?? false
+        swallow_first_press =
+            try values.decodeIfPresent(Bool.self, forKey: .swallow_first_press) ?? true
+        sleep_image = try values.decodeIfPresent(String.self, forKey: .sleep_image)
+        extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Idle.known) ?? [:]
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(after, forKey: .after)
+        try values.encode(scene, forKey: .scene)
+        if !scenes.isEmpty { try values.encode(scenes, forKey: .scenes) }
+        try values.encodeIfPresent(hold, forKey: .hold)
+        try values.encodeIfPresent(fade, forKey: .fade)
+        try values.encodeIfPresent(fade_in, forKey: .fade_in)
+        try values.encodeIfPresent(wake_on, forKey: .wake_on)
+        try values.encodeIfPresent(brightness, forKey: .brightness)
+        try values.encode(dark_when_display_sleeps, forKey: .dark_when_display_sleeps)
+        try values.encode(swallow_first_press, forKey: .swallow_first_press)
+        try values.encodeIfPresent(sleep_image, forKey: .sleep_image)
+        try encoder.encodeExtra(extra)
+    }
+
+    /// The playlist, or the single scene as a playlist of one, so a caller has
+    /// one shape to handle instead of two.
+    var playlist: [String] { scenes.isEmpty ? (scene.isEmpty ? [] : [scene]) : scenes }
+}
+
 struct Config: Codable, Equatable {
     var brightness: Int = 70
     var poll_ms: Int = 300
@@ -298,9 +377,11 @@ struct Config: Codable, Equatable {
     var font: String?
     var defaultScene: String = "general"
     var scenes: [String: DeckScene] = [:]
+    /// The screensaver. Absent means the dock never rests.
+    var idle: Idle?
 
     enum CodingKeys: String, CodingKey {
-        case brightness, poll_ms, press_feedback, font, scenes
+        case brightness, poll_ms, press_feedback, font, scenes, idle
         case defaultScene = "default"
     }
 
@@ -314,6 +395,7 @@ struct Config: Codable, Equatable {
         font = try values.decodeIfPresent(String.self, forKey: .font)
         defaultScene = try values.decodeIfPresent(String.self, forKey: .defaultScene) ?? "general"
         scenes = try values.decodeIfPresent([String: DeckScene].self, forKey: .scenes) ?? [:]
+        idle = try values.decodeIfPresent(Idle.self, forKey: .idle)
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Config.known) ?? [:]
     }
 
@@ -321,7 +403,7 @@ struct Config: Codable, Equatable {
     var extra: [String: JSONValue] = [:]
 
     private static let known: Set<String> = [
-        "brightness", "poll_ms", "press_feedback", "font", "default", "scenes",
+        "brightness", "poll_ms", "press_feedback", "font", "default", "scenes", "idle",
     ]
 
     func encode(to encoder: Encoder) throws {
@@ -332,6 +414,7 @@ struct Config: Codable, Equatable {
         try values.encodeIfPresent(font, forKey: .font)
         try values.encode(defaultScene, forKey: .defaultScene)
         try values.encode(scenes, forKey: .scenes)
+        try values.encodeIfPresent(idle, forKey: .idle)
         try encoder.encodeExtra(extra)
     }
 

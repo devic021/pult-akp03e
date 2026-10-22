@@ -288,7 +288,7 @@ private struct IconField: View {
 }
 
 /// A colour well that can also mean "let the daemon choose".
-private struct ColorField: View {
+struct ColorField: View {
     @Binding var hex: String?
     /// Shown as the placeholder when nothing is set.
     let fallback: String?
