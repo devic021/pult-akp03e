@@ -1,10 +1,10 @@
 # Pult
 
-A macOS controller for the **Ajazz AKP03E** stream dock. The six keys repaint
-themselves when you switch applications, and the whole dock can become one
-moving picture instead of six separate ones.
+A macOS app for the **Ajazz AKP03E** stream dock. The six keys follow whatever
+application is in front, and everything about them is editable without touching
+a configuration file.
 
-![The animation gallery](assets/readme/animations.png)
+![The scene editor](assets/readme/scenes.png)
 
 ```
 macOS frontmost app  →  bundle ID  →  scene  →  6 × JPEG 60×60 + an action table
@@ -12,41 +12,128 @@ macOS frontmost app  →  bundle ID  →  scene  →  6 × JPEG 60×60 + an acti
 
 The dock stores nothing but its boot logo. Every scene lives on your Mac and is
 pushed over HID, so nothing is lost when it is unplugged and nothing has to be
-synchronised.
+synchronised with anything.
 
 ## Install
 
 Download the disk image from [Releases](../../releases), drag Pult into
-Applications and open it. The first screen starts the background service and
-points at the one permission that has to be granted by hand.
+Applications and open it. The first screen starts the background service; there
+is nothing to run in a terminal.
 
 Keys bound to a keystroke need **System Settings › Privacy & Security ›
 Accessibility** (called *Device Control and Data Access* on macOS 27). Tick
-`pultd` there — the daemon, not the app: the app does not press keys, the
-daemon does. Keys bound to `run` or `volume` work without it.
+`pultd` there — the daemon, not the app: the app does not press keys, the daemon
+does. Keys bound to `run` or `volume` work without it.
 
-## What it does
+Requires macOS 26 or later.
 
-**Scenes.** One per application, matched on bundle ID. Six keys with a label, an
-icon and an action; three plain buttons; three encoders, each with a twist in
-either direction and a press of its own. More than six tools? Bind a knob to
-turn pages.
+## Scenes
 
-**Animations.** A scene can paint across the whole dock instead of six separate
-pictures. Ten built-in motions, or a file of your own — a GIF, an animated PNG
-or WebP, a folder of numbered frames, or one still picture.
+A scene is a page of keys, and it claims one or more applications by bundle ID.
+Open one of them and the dock switches to it; a trailing `*` matches a prefix,
+so `com.adobe.*` is one rule rather than nine. One scene is the default, for
+everything that claims nothing.
 
-**A screensaver.** When nobody has touched the Mac for a while the dock stops
-being a controller and becomes something to look at, cycling through a playlist
-of animations and dissolving between them. Nothing in Pult keeps the Mac awake;
-it asks to paint one last frame before sleep and then lets go.
+Each of the **six keys with a display** carries:
 
-**Both languages.** English and Serbian, switched live, along with a text size
-that scales the whole interface.
+* a **label**, which shrinks and wraps to fit rather than being cut off
+* an **icon** — one of 1865 from [Lucide](https://lucide.dev), or an image of
+  your own, with its own colour
+* a **background colour**, and text black or white, whichever reads better,
+  unless you say otherwise
+* an **animation**, per key, for the ones worth noticing
+* one **action**
 
-![The scene editor](assets/readme/scenes.png)
+Keys can be dragged to swap them. Past the sixth they spill onto further pages;
+bind a knob to turn them, and the dock shows which page it is on.
 
-*The scene editor, here in Serbian.*
+There are also **three plain buttons** with no display, and **three encoders**,
+each with a twist in either direction and a press of its own — nine bindings
+from the knobs alone.
+
+### What a key can do
+
+| | |
+|---|---|
+| `shortcut` | Press a key combination, as though you had typed it |
+| `run` | Run a command |
+| `app` | Open an application |
+| `scene` | Switch the dock to another scene |
+| `page` | Turn to the next or previous page |
+| `volume` | Raise or lower the system volume |
+
+Every key is drawn by the daemon and sent as a finished picture, so what the
+editor shows is what the dock shows — the preview is the same renderer.
+
+## The device
+
+![The device pane](assets/readme/device.png)
+
+Brightness, applied as you drag it. Sleep and wake on demand. And the **boot
+logo** — the one thing the dock keeps in its own memory and goes on showing as
+the backdrop behind the keys. Set your own picture, put Pult's mark there, or
+take it off again.
+
+Worth knowing before you write one: the dock hands no picture back, so the logo
+it shipped with is gone the moment the first one is written. "Remove" writes a
+black panel over it, which is what removing can honestly mean here.
+
+## Animations
+
+A scene can paint across the whole dock instead of six separate pictures: ten
+built-in motions, or a file of your own — a GIF, an animated PNG or WebP, a
+folder of numbered frames, or one still picture.
+
+![The animation gallery](assets/readme/animations.png)
+
+Pick one by looking at it. Every tile is the real dock running the real motion,
+with the real plastic drawn in, because that is the one question a flat preview
+cannot answer.
+
+Each effect declares the settings it honours and the range it will accept, and
+the editor builds its controls from that — so a slider can never outlive the
+thing it drives, and a new effect grows the gallery with no change to the app.
+Before saving, put it on the dock for twenty seconds and watch it there; the
+trial expires on its own.
+
+## Screensaver
+
+![The screensaver pane](assets/readme/screensaver.png)
+
+After a while with nobody touching the Mac, the dock stops being a controller
+and becomes something to look at: a playlist of animations, each running for as
+long as you say, dissolving into the next.
+
+A press on the dock counts as activity even though macOS never sees it, and the
+press that wakes it is swallowed so it does not also fire what that key does.
+You can choose the brightness it rests at, and the still picture it holds while
+the Mac sleeps.
+
+Nothing here keeps the Mac awake. The dock asks to paint one last frame before
+sleep and then lets go.
+
+## Settings
+
+![Settings](assets/readme/settings.png)
+
+Light, dark or follow the system. **English or Serbian**, switched live. A text
+size that scales the whole interface, not just the labels. How often the
+frontmost application is checked, and whether a press flashes on screen.
+
+The background service can be restarted, stopped, set to start at login, or
+repaired if the app has been moved. The configuration can be revealed, exported
+and loaded back.
+
+## Configuration as a file
+
+Everything the interface does is a file at `~/.config/pult/config.toml`, written
+from [`config.example.toml`](config.example.toml) on first run and documented in
+place. It is picked up while the daemon runs; a file that fails to parse is
+reported and the running one is kept.
+
+The file and the app are interchangeable in both directions. Anything the app
+does not understand — a key from a newer build, a table added by hand — survives
+a save untouched rather than being quietly dropped.
 
 ## The hardware
 
@@ -72,17 +159,13 @@ Measured on the wire: one key is 1.2 ms, all six plus a flush is 5.2 ms. At 15
 frames a second a full-dock animation spends about 8% of the dock's time
 receiving pictures, and well under 1% of a core drawing them.
 
-## Animations, and the seams
+### The seams
 
 Six 60×60 screens with plastic between them are not a 180×120 image. The gaps
 are real — about a quarter of a key — so a canvas is larger than the sum of its
 keys, and each key is a window cut out of it.
 
 ![Every effect, with the real seams drawn in](assets/readme/effects.png)
-
-*Every effect as the dock really shows it, bezels included.*
-
-Which geometry is right depends on what is being drawn:
 
 * **Physical** — 212×136, true geometry. A circle stays round and a diagonal
   stays straight, at the cost that a travelling front disappears for the width
@@ -92,24 +175,6 @@ Which geometry is right depends on what is being drawn:
 
 Static text and photographs belong on neither: a letter cut by 16 px of plastic
 is a letter gone.
-
-Every effect is a pure function of `(phase, seed)`. Phase is an accumulator the
-daemon advances by `dt × speed`, which is why moving the speed slider changes
-how fast the picture moves and never where it is. Each effect also declares the
-settings it honours and the range it will accept, and the editor builds its
-controls from that — so a slider can never outlive the thing it drives, and a
-new effect grows the gallery with no change to the app.
-
-## Configuration
-
-Everything the interface does is a file at `~/.config/pult/config.toml`, written
-from [`config.example.toml`](config.example.toml) on first run and documented in
-place. It is picked up while the daemon runs; a file that fails to parse is
-reported and the running one is kept.
-
-The file and the app are interchangeable in both directions. Anything the app
-does not understand — a key from a newer build, a table added by hand — survives
-a save untouched rather than being quietly dropped.
 
 ## Build from source
 
