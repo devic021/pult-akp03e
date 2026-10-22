@@ -14,7 +14,8 @@ use hidapi::HidApi;
 
 use pult::action::{self, Outcome};
 use base64::Engine;
-use pult::config::{self, Config, Key};
+use pult::canvas::{self, Canvas};
+use pult::config::{self, Config, Key, Surface};
 use pult::control::{Call, Control, Request};
 use pult::device;
 use pult::frontmost;
@@ -32,8 +33,9 @@ const READ_TIMEOUT: Duration = Duration::from_millis(40);
 /// six-key repaint in about 5 ms, so this is a comfortable fraction of what it
 /// can take.
 const FRAME_INTERVAL: Duration = Duration::from_millis(66);
-/// A shorter wait on input, so animation frames are not held up by it.
-const FRAME_TIMEOUT: Duration = Duration::from_millis(20);
+/// The shortest the loop will wait on input, so a frame deadline that is
+/// almost due does not turn into a busy spin.
+const MIN_TIMEOUT: Duration = Duration::from_millis(2);
 /// How long a key stays lit after being pressed.
 const PRESS_FLASH: Duration = Duration::from_millis(180);
 /// The dock dims itself if left alone; the SDK's keep-alive prevents that.
@@ -202,14 +204,24 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     let mut app = frontmost::bundle_id();
     let mut active = state.config.scene_for(app.as_deref()).to_string();
     let mut page = 0;
-    paint(&device, state, &active, page, display_keys)?;
+    paint(&device, state, &active, page, display_keys, &found)?;
     report(app.as_deref(), &active, page, state.pages(&active, display_keys));
 
     let poll_every = Duration::from_millis(state.config.poll_ms.max(50));
     let mut last_poll = Instant::now();
     let mut last_keep_alive = Instant::now();
     let mut painted_at = Instant::now();
-    let mut last_frame = Instant::now();
+    // The dock's own keys are not a keyboard, so CoreGraphics never sees them:
+    // without this the dock would fall asleep under your hand.
+    let mut touched = Instant::now();
+    let mut resting = false;
+    let mut dark = false;
+    let mut swallow_press = false;
+    // A deadline, not an elapsed check: waiting 20 ms at a time and then asking
+    // whether 66 ms had passed meant the first eligible iteration landed at 80,
+    // so the advertised 15 fps was really 12.5 and drifted with the work done
+    // in between.
+    let mut next_frame = Instant::now() + FRAME_INTERVAL;
     let mut pressed: Option<(u8, Instant)> = None;
 
     control.publish(json!({
@@ -241,7 +253,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 &mut page,
             ) {
                 Ok(true) => {
-                    paint(&device, state, &active, page, display_keys)?;
+                    paint(&device, state, &active, page, display_keys, &found)?;
                     painted_at = Instant::now();
                 }
                 Ok(false) => {}
@@ -254,7 +266,14 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 .config
                 .scene(&active)
                 .is_some_and(|scene| scene.is_animated(page, display_keys as usize));
-        let timeout = if moving { FRAME_TIMEOUT } else { READ_TIMEOUT };
+        let timeout = if moving {
+            // Sleep exactly up to the next frame, never past it.
+            next_frame
+                .saturating_duration_since(Instant::now())
+                .clamp(MIN_TIMEOUT, READ_TIMEOUT)
+        } else {
+            READ_TIMEOUT
+        };
 
         let read_started = Instant::now();
         let input = reader.read(Some(timeout));
@@ -263,6 +282,16 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
         match input {
             Ok(events) => {
                 for event in events {
+                    touched = Instant::now();
+
+                    // Waking the dock with a slap must not also fire whatever
+                    // that key does; it would feel broken to whoever learns it.
+                    if swallow_press {
+                        swallow_press = false;
+                        control.publish(event_json(&event, &active, page));
+                        continue;
+                    }
+
                     if let Event::ButtonDown(key) = event {
                         if key < display_keys && state.config.press_feedback {
                             pressed = Some((key, Instant::now()));
@@ -274,7 +303,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         Some(Step::Scene(scene)) => {
                             active = scene;
                             page = 0;
-                            paint(&device, state, &active, page, display_keys)?;
+                            paint(&device, state, &active, page, display_keys, &found)?;
                             painted_at = Instant::now();
                             println!("Scene   : {active:?} (by key)");
                             control.publish(json!({
@@ -287,7 +316,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                             let pages = state.pages(&active, display_keys);
                             if target != page && target < pages {
                                 page = target;
-                                paint(&device, state, &active, page, display_keys)?;
+                                paint(&device, state, &active, page, display_keys, &found)?;
                                 painted_at = Instant::now();
                                 println!("Page    : {} of {pages}", page + 1);
                                 control.publish(json!({
@@ -307,8 +336,15 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             Err(e) => return Err(e).context("reading dock input"),
         }
 
-        if moving && last_frame.elapsed() >= FRAME_INTERVAL {
-            last_frame = Instant::now();
+        if moving && Instant::now() >= next_frame {
+            // Advance by whole intervals so the clock keeps its rate; if a slow
+            // iteration put us past several, drop them rather than catch up in
+            // a burst.
+            next_frame += FRAME_INTERVAL;
+            let now = Instant::now();
+            if next_frame <= now {
+                next_frame = now + FRAME_INTERVAL;
+            }
             let done = redraw(
                 &device,
                 state,
@@ -317,6 +353,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 painted_at.elapsed().as_secs_f32(),
                 pressed,
                 display_keys,
+                &found,
             )?;
             if done {
                 pressed = None;
@@ -330,19 +367,69 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 device.set_brightness(state.config.brightness.min(100))?;
                 active = state.config.scene_for(app.as_deref()).to_string();
                 page = 0;
-                paint(&device, state, &active, page, display_keys)?;
+                paint(&device, state, &active, page, display_keys, &found)?;
                 painted_at = Instant::now();
                 report(app.as_deref(), &active, page, state.pages(&active, display_keys));
+            }
+
+            if let Some(rest) = state.config.idle.clone() {
+                let asleep = rest.dark_when_display_sleeps && pult::idle::display_asleep();
+                let alone = pult::idle::since_input().min(touched.elapsed()) >= rest.after();
+
+                if asleep {
+                    // Nothing is watching: light the room for no one is exactly
+                    // what an idle screen is supposed to avoid.
+                    if !dark {
+                        device.sleep().context("sleeping the dock")?;
+                        dark = true;
+                        resting = false;
+                    }
+                } else {
+                    if dark {
+                        dark = false;
+                        device.set_brightness(state.config.brightness.min(100))?;
+                        paint(&device, state, &active, page, display_keys, &found)?;
+                        painted_at = Instant::now();
+                    }
+
+                    if alone && !resting && active != rest.scene {
+                        resting = true;
+                        active = rest.scene.clone();
+                        page = 0;
+                        // The dim lands in the same instant as the repaint:
+                        // brightness steps on this device are seen, not felt.
+                        device.set_brightness(rest.brightness())?;
+                        paint(&device, state, &active, page, display_keys, &found)?;
+                        painted_at = Instant::now();
+                        println!("Idle    : resting on {:?}", active);
+                        control.publish(json!({ "event": "idle", "resting": true, "scene": active }));
+                    } else if !alone && resting {
+                        resting = false;
+                        swallow_press = rest.swallow_first_press;
+                        // Back to whatever the frontmost application asks for,
+                        // not to whatever happened to be showing before.
+                        active = state.config.scene_for(app.as_deref()).to_string();
+                        page = 0;
+                        device.set_brightness(state.config.brightness.min(100))?;
+                        paint(&device, state, &active, page, display_keys, &found)?;
+                        painted_at = Instant::now();
+                        println!("Idle    : awake on {:?}", active);
+                        control.publish(json!({ "event": "idle", "resting": false, "scene": active }));
+                    }
+                }
             }
 
             let current = frontmost::bundle_id();
             if current != app {
                 app = current;
                 let target = state.config.scene_for(app.as_deref()).to_string();
-                if target != active {
+                if resting {
+                    // An application switching in the background does not end
+                    // the rest; only a person does.
+                } else if target != active {
                     active = target;
                     page = 0;
-                    paint(&device, state, &active, page, display_keys)?;
+                    paint(&device, state, &active, page, display_keys, &found)?;
                     painted_at = Instant::now();
                 }
                 report(app.as_deref(), &active, page, state.pages(&active, display_keys));
@@ -389,11 +476,16 @@ fn paint(
     scene_name: &str,
     page: usize,
     display_keys: u8,
+    found: &device::Found,
 ) -> Result<()> {
     let scene = state
         .config
         .scene(scene_name)
         .with_context(|| format!("scene {scene_name:?} vanished from the config"))?;
+
+    if let Some(surface) = scene.canvas() {
+        return paint_canvas(device, surface, found, 0.0);
+    }
 
     let per_page = display_keys as usize;
     let keys = scene.page(page, per_page);
@@ -422,6 +514,48 @@ fn paint(
 /// The page strip to draw, or nothing when a scene fits on one page.
 fn marker(page: usize, pages: usize) -> Option<(usize, usize)> {
     (pages > 1).then_some((page, pages))
+}
+
+/// Draws one frame of a scene that paints across the whole dock.
+///
+/// The keys keep whatever they are bound to — a canvas replaces the picture,
+/// not the press.
+fn paint_canvas(
+    device: &Ajazz,
+    surface: &Surface,
+    found: &device::Found,
+    time: f32,
+) -> Result<()> {
+    let effect = surface.effect.unwrap_or(canvas::Effect::Sweep);
+    let mapping = surface.mapping.unwrap_or_else(|| effect.mapping());
+    let (rows, cols) = found.kind.key_layout();
+    let (key, _) = found.kind.key_image_format().size;
+
+    let tint = surface
+        .color
+        .as_deref()
+        .map(pult::render::parse_color)
+        .transpose()?
+        .unwrap_or(image::Rgb([80, 160, 255]));
+    let background = surface
+        .background
+        .as_deref()
+        .map(pult::render::parse_color)
+        .transpose()?
+        .unwrap_or(image::Rgb([8, 9, 12]));
+
+    let mut canvas = Canvas::new(mapping, cols as u32, rows as u32, key as u32);
+    canvas::draw(effect, &mut canvas, time, tint, background);
+
+    for index in 0..canvas.keys().min(found.kind.display_key_count() as u32) {
+        let tile = image::DynamicImage::ImageRgb8(canvas.tile(index));
+        device
+            .set_button_image(index as u8, tile)
+            .with_context(|| format!("sending canvas tile {index}"))?;
+    }
+
+    device.flush().context("flushing canvas")?;
+    Ok(())
 }
 
 /// Renders a key, falling back to a plain one when its art will not draw.
@@ -463,10 +597,16 @@ fn redraw(
     time: f32,
     pressed: Option<(u8, Instant)>,
     display_keys: u8,
+    found: &device::Found,
 ) -> Result<bool> {
     let Some(scene) = state.config.scene(scene_name) else {
         return Ok(true);
     };
+
+    if let Some(surface) = scene.canvas() {
+        paint_canvas(device, surface, found, time)?;
+        return Ok(pressed.is_some_and(|(_, at)| at.elapsed() >= PRESS_FLASH));
+    }
 
     let per_page = display_keys as usize;
     let pages = marker(page, scene.pages(per_page));

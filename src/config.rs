@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::time::Duration;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -27,7 +28,80 @@ pub struct Config {
     pub press_feedback: bool,
     /// Scene to fall back to when no scene claims the frontmost app.
     pub default: String,
+    /// What the dock does when nobody has touched the Mac for a while.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub idle: Option<Idle>,
     pub scenes: BTreeMap<String, Scene>,
+}
+
+/// The idle screen.
+///
+/// One block, never a flag per scene: two scenes both claiming the idle slot is
+/// an ambiguity that only ever becomes a bug report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Idle {
+    /// How long since the last keyboard or pointer event: `30s`, `3m`, `1h`.
+    pub after: String,
+    /// The scene to show. Usually a canvas, but any scene will do.
+    pub scene: String,
+    /// Dimmer than working brightness, and never below a quarter: the backlight
+    /// shifts colour at the bottom of its range.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brightness: Option<u8>,
+    /// Go dark rather than light an empty room.
+    #[serde(default = "yes")]
+    pub dark_when_display_sleeps: bool,
+    /// Waking the dock with a key should not also fire what that key does.
+    #[serde(default = "yes")]
+    pub swallow_first_press: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl Idle {
+    pub fn after(&self) -> Duration {
+        crate::idle::parse_duration(&self.after).unwrap_or(Duration::from_secs(180))
+    }
+
+    /// Brightness while idle, floored so the colours stay honest.
+    pub fn brightness(&self) -> u8 {
+        self.brightness.unwrap_or(35).clamp(25, 100)
+    }
+}
+
+/// What a scene paints with.
+///
+/// Absent means `keys`, so every configuration written before this existed
+/// keeps its meaning exactly.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Surface {
+    #[serde(default)]
+    pub kind: SurfaceKind,
+    /// Which motion a canvas runs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect: Option<crate::canvas::Effect>,
+    /// Override the geometry the effect would choose for itself.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mapping: Option<crate::canvas::Mapping>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fps: Option<u8>,
+    /// The colour the motion is drawn in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceKind {
+    /// Six keys, each its own picture. What every scene was until now.
+    #[default]
+    Keys,
+    /// One drawing spanning the whole dock, cut into six.
+    Canvas,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -44,6 +118,9 @@ pub struct Scene {
     /// The three encoders, left to right.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub encoders: Vec<Encoder>,
+    /// What this scene paints with; absent means six separate keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surface: Option<Surface>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -70,8 +147,18 @@ pub struct Key {
 }
 
 impl Scene {
+    /// The canvas this scene paints with, if it paints with one.
+    pub fn canvas(&self) -> Option<&Surface> {
+        self.surface
+            .as_ref()
+            .filter(|surface| surface.kind == SurfaceKind::Canvas)
+    }
+
     /// Whether anything on `page` moves on its own, and so needs a redraw clock.
     pub fn is_animated(&self, page: usize, per_page: usize) -> bool {
+        if self.canvas().is_some() {
+            return true;
+        }
         self.page(page, per_page)
             .iter()
             .any(|key| key.animate.is_some())
@@ -189,6 +276,15 @@ impl Config {
             bail!("default scene {:?} is not defined", self.default);
         }
 
+        if let Some(idle) = &self.idle {
+            if !self.scenes.contains_key(&idle.scene) {
+                bail!("idle scene {:?} is not defined", idle.scene);
+            }
+            if crate::idle::parse_duration(&idle.after).is_none() {
+                bail!("idle after {:?} is not a duration like 30s, 3m or 1h", idle.after);
+            }
+        }
+
         for (name, scene) in &self.scenes {
             if scene.buttons.len() > 3 {
                 bail!(
@@ -201,6 +297,16 @@ impl Config {
                     "scene {name:?} has {} encoders, the dock has 3",
                     scene.encoders.len()
                 );
+            }
+
+            if let Some(surface) = scene.canvas() {
+                if surface.effect.is_none() {
+                    bail!("scene {name:?} is a canvas but names no effect");
+                }
+                for colour in [&surface.color, &surface.background].into_iter().flatten() {
+                    crate::render::parse_color(colour)
+                        .with_context(|| format!("in scene {name:?}"))?;
+                }
             }
 
             for key in &scene.keys {

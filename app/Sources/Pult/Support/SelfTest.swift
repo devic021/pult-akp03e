@@ -45,6 +45,36 @@ enum SelfTest {
             failures.append("config: \(error.localizedDescription)")
         }
 
+        // A newer daemon will write keys this build has no field for. The app
+        // must carry them through a save untouched, or the first edit from the
+        // editor deletes them.
+        do {
+            let sample = """
+            {"brightness":70,"poll_ms":300,"press_feedback":true,"default":"general",
+             "feeds":{"weather":{"kind":"http","every":900}},
+             "scenes":{"x":{"surface":{"kind":"canvas"},
+                            "keys":[{"label":"a","value":"{weather.temp}"}]}}}
+            """
+            let decoded = try JSONDecoder().decode(Config.self, from: Data(sample.utf8))
+            let again = try JSONSerialization.jsonObject(
+                with: JSONEncoder().encode(decoded)
+            ) as? [String: Any] ?? [:]
+
+            let keptFeeds = again["feeds"] != nil
+            let scene = (again["scenes"] as? [String: Any])?["x"] as? [String: Any]
+            let keptSurface = scene?["surface"] != nil
+            let keptValue = ((scene?["keys"] as? [[String: Any]])?.first)?["value"] != nil
+
+            print("unknown keys: feeds \(keptFeeds ? "kept" : "LOST"), "
+                + "surface \(keptSurface ? "kept" : "LOST"), "
+                + "value \(keptValue ? "kept" : "LOST")")
+            if !(keptFeeds && keptSurface && keptValue) {
+                failures.append("saving would delete configuration this build does not understand")
+            }
+        } catch {
+            failures.append("unknown-key round trip: \(error.localizedDescription)")
+        }
+
         do {
             let icons = try client.send(["cmd": "icons"], as: [String].self, field: "icons")
             print("icons       : ok, \(icons.count)")

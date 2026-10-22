@@ -140,6 +140,32 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         scene = try values.decodeIfPresent(String.self, forKey: .scene)
         volume = try values.decodeIfPresent(Int.self, forKey: .volume)
         page = try values.decodeIfPresent(PageTurn.self, forKey: .page)
+        extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Key.known) ?? [:]
+    }
+
+    /// Anything a newer daemon wrote that this version has no field for.
+    var extra: [String: JSONValue] = [:]
+
+    private static let known: Set<String> = [
+        "label", "color", "text_color", "icon", "icon_color", "animate",
+        "app", "run", "shortcut", "scene", "volume", "page",
+    ]
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        if !label.isEmpty { try values.encode(label, forKey: .label) }
+        try values.encodeIfPresent(color, forKey: .color)
+        try values.encodeIfPresent(text_color, forKey: .text_color)
+        try values.encodeIfPresent(icon, forKey: .icon)
+        try values.encodeIfPresent(icon_color, forKey: .icon_color)
+        try values.encodeIfPresent(animate, forKey: .animate)
+        try values.encodeIfPresent(app, forKey: .app)
+        try values.encodeIfPresent(run, forKey: .run)
+        try values.encodeIfPresent(shortcut, forKey: .shortcut)
+        try values.encodeIfPresent(scene, forKey: .scene)
+        try values.encodeIfPresent(volume, forKey: .volume)
+        try values.encodeIfPresent(page, forKey: .page)
+        try encoder.encodeExtra(extra)
     }
 
     var action: Action {
@@ -229,6 +255,21 @@ struct DeckScene: Codable, Equatable {
         keys = try values.decodeIfPresent([Key].self, forKey: .keys) ?? []
         buttons = try values.decodeIfPresent([Action].self, forKey: .buttons) ?? []
         encoders = try values.decodeIfPresent([Knob].self, forKey: .encoders) ?? []
+        extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: DeckScene.known) ?? [:]
+    }
+
+    /// A scene's surface kind and anything else a newer daemon added.
+    var extra: [String: JSONValue] = [:]
+
+    private static let known: Set<String> = ["apps", "keys", "buttons", "encoders"]
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        if !apps.isEmpty { try values.encode(apps, forKey: .apps) }
+        if !keys.isEmpty { try values.encode(keys, forKey: .keys) }
+        if !buttons.isEmpty { try values.encode(buttons, forKey: .buttons) }
+        if !encoders.isEmpty { try values.encode(encoders, forKey: .encoders) }
+        try encoder.encodeExtra(extra)
     }
 
     /// Pages are implicit: six keys to a page.
@@ -260,6 +301,25 @@ struct Config: Codable, Equatable {
         font = try values.decodeIfPresent(String.self, forKey: .font)
         defaultScene = try values.decodeIfPresent(String.self, forKey: .defaultScene) ?? "general"
         scenes = try values.decodeIfPresent([String: DeckScene].self, forKey: .scenes) ?? [:]
+        extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Config.known) ?? [:]
+    }
+
+    /// Whole tables this version knows nothing about — feeds, for one.
+    var extra: [String: JSONValue] = [:]
+
+    private static let known: Set<String> = [
+        "brightness", "poll_ms", "press_feedback", "font", "default", "scenes",
+    ]
+
+    func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(brightness, forKey: .brightness)
+        try values.encode(poll_ms, forKey: .poll_ms)
+        try values.encode(press_feedback, forKey: .press_feedback)
+        try values.encodeIfPresent(font, forKey: .font)
+        try values.encode(defaultScene, forKey: .defaultScene)
+        try values.encode(scenes, forKey: .scenes)
+        try encoder.encodeExtra(extra)
     }
 
     /// Scene names in a stable order, so the sidebar does not shuffle.

@@ -505,3 +505,78 @@ encoders = [
   { cw = { shortcut = "cmd+=" }, ccw = { shortcut = "cmd+-" } },
   { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
 ]
+
+# ======================================================================= platno
+# A scene can paint across the whole dock instead of six separate keys. The
+# seams are real — about a quarter of a key of plastic between each screen — so
+# these are sweeps, waves and fills, never text or photographs: a letter cut by
+# the bezel is a letter gone.
+#
+# `effect` chooses the motion; the geometry follows it unless `mapping` says
+# otherwise. `physical` keeps shapes true across the gaps, `packed` keeps a
+# travelling front at constant speed.
+#
+# The keys keep whatever they are bound to: a canvas replaces the picture, not
+# the press. Button 1 is left on "back to general" so a canvas scene can always
+# be left — nothing on screen says what the keys do.
+
+[scenes.talas]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" } },
+  { cw = { scene = "puls" }, ccw = { scene = "kisa" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]
+[scenes.talas.surface]
+kind = "canvas"
+effect = "wave"
+color = "#4da3ff"
+background = "#070a10"
+
+[scenes.puls]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.puls.surface]
+kind = "canvas"
+effect = "pulse"
+color = "#c3a2ff"
+background = "#08070f"
+
+[scenes.kisa]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.kisa.surface]
+kind = "canvas"
+effect = "rain"
+color = "#32d074"
+background = "#060a07"
+
+[scenes.zora]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.zora.surface]
+kind = "canvas"
+effect = "aurora"
+color = "#ff8a3d"
+background = "#0b0608"
+
+[scenes.prelet]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.prelet.surface]
+kind = "canvas"
+effect = "sweep"
+color = "#ffffff"
+background = "#06070a"
+
+# ================================================================== mirovanje
+# When nobody has touched the Mac for a while the dock stops being a controller
+# and becomes something to look at. Any scene will do; a canvas is the point.
+#
+# Waking is a keystroke, a mouse move or a press on the dock itself — the dock
+# is a vendor HID device, not a keyboard, so macOS never sees its presses and
+# the daemon folds them in on its own. The waking press is swallowed, because
+# slapping a key to wake the dock should not also fire what that key does.
+
+[idle]
+after = "3m"
+scene = "zora"
+brightness = 35
+dark_when_display_sleeps = true
+swallow_first_press = true
