@@ -1169,6 +1169,93 @@ mod tests {
         }
     }
 
+    /// The catalogue says which knobs an effect honours; the table says what
+    /// each one looks like. If a name is in one and not the other the editor
+    /// gets a row it cannot draw, or a slider for something nothing reads.
+    #[test]
+    fn every_knob_an_effect_offers_has_a_row() {
+        for effect in Effect::all() {
+            for name in effect.knobs() {
+                assert!(
+                    knob(name).is_some(),
+                    "{effect:?} offers {name:?}, which is in no table"
+                );
+            }
+        }
+
+        // And nothing sits in the table that no effect will ever ask for.
+        let offered: std::collections::HashSet<&str> =
+            Effect::all().iter().flat_map(|e| e.knobs()).copied().collect();
+        for row in KNOBS {
+            assert!(
+                offered.contains(row.name),
+                "the table has a row for {:?}, which no effect honours",
+                row.name
+            );
+        }
+    }
+
+    /// A slider that runs further than the daemon accepts stops doing anything
+    /// near its end, and looks broken while it does. The ranges the editor is
+    /// told must be the ranges the daemon enforces, which holds only while
+    /// `Surface::style` reads them from here.
+    #[test]
+    fn a_knob_clamps_to_what_it_advertises() {
+        for row in KNOBS {
+            if row.control != Control::Range {
+                continue;
+            }
+            assert!(row.min < row.max, "{} has an empty range", row.name);
+            assert!(
+                row.number(Some(row.max + 1000.0)) <= row.max,
+                "{} lets a value past its own maximum",
+                row.name
+            );
+            assert!(
+                row.number(Some(row.min - 1000.0)) >= row.min,
+                "{} lets a value below its own minimum",
+                row.name
+            );
+            if let Preset::Number(preset) = row.preset {
+                assert!(
+                    (row.min..=row.max).contains(&preset),
+                    "{} defaults to {preset}, outside its own range",
+                    row.name
+                );
+            }
+        }
+    }
+
+    /// The shape the editor decodes, written down so a change to it has to
+    /// change this line too. The app builds one control per entry and holds no
+    /// table of its own, so this JSON is the whole contract between them.
+    #[test]
+    fn a_knob_crosses_the_socket_as_the_editor_expects() {
+        let row = serde_json::to_value(k("scale")).unwrap();
+        assert_eq!(row["name"], "scale");
+        assert_eq!(row["control"], "range");
+        assert_eq!(row["min"], 0.25);
+        assert_eq!(row["max"], 4.0);
+        assert_eq!(row["preset"], 1.0);
+        assert!(row["says"].as_str().is_some_and(|line| !line.is_empty()));
+        // A range has no options, and the field is left out rather than sent
+        // empty, so the editor can tell "no choices" from "choices not loaded".
+        assert!(row.get("options").is_none());
+
+        let choice = serde_json::to_value(k("shape")).unwrap();
+        assert_eq!(choice["control"], "choice");
+        assert_eq!(choice["options"], serde_json::json!(["sine", "ease", "heartbeat"]));
+        assert_eq!(choice["preset"], "sine");
+
+        // Three knobs have no default of their own: the effect is the default,
+        // and the catalogue entry already carries each effect's answer.
+        assert_eq!(serde_json::to_value(k("direction")).unwrap()["preset"], "effect");
+
+        let pair = serde_json::to_value(k("lobes")).unwrap();
+        assert_eq!(pair["control"], "pair");
+        assert_eq!(pair["preset"], serde_json::json!([1.0, 1.0]));
+    }
+
     /// A repaint after a config reload, a resumed frame, a second preview: all
     /// of them must land on the picture the eye already had. That holds only
     /// while nothing in here reads a clock or a random number of its own.
@@ -1199,5 +1286,207 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+// ============================================================ the knob table
+//
+// One row per knob name, and a name means one thing everywhere: `scale` is
+// always a length multiplier, `density` always a count multiplier. The table
+// is where the range, the step and the default live — and `Surface::style`
+// reads its clamps from here rather than carrying its own copy, because two
+// copies of a range is how an editor ends up with a slider that runs further
+// than the daemon will accept and silently stops doing anything near the end.
+
+/// What the editor should put on the row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Control {
+    /// A slider between `min` and `max`.
+    Range,
+    /// One of `options`.
+    Choice,
+    /// A colour well.
+    Color,
+    /// A switch.
+    Flag,
+    /// Two numbers that belong together.
+    Pair,
+    /// A length of time written the way a person says it: `30s`, `5m`.
+    Duration,
+}
+
+/// The value a knob has when nobody has set it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Preset {
+    Number(f32),
+    Text(&'static str),
+    Flag(bool),
+    Pair([f32; 2]),
+    /// The effect decides: `direction`, `mapping` and `fps` differ per effect,
+    /// and the catalogue entry already carries each effect's own answer.
+    Effect,
+}
+
+/// Written as the bare value, so a row reads as `"preset": 1.0` rather than as
+/// a tagged union the editor would have to unwrap.
+///
+/// `Effect` is the one that needs saying out loud. Deriving `untagged` wrote it
+/// as `null`, which the editor cannot tell from "this knob has no default" —
+/// and those mean opposite things: one says go and read the effect's own
+/// answer, the other says there is nothing to read. It goes over as the string
+/// `"effect"`, which no knob's own default collides with.
+impl Serialize for Preset {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        match self {
+            Preset::Number(number) => serializer.serialize_f32(*number),
+            Preset::Text(text) => serializer.serialize_str(text),
+            Preset::Flag(flag) => serializer.serialize_bool(*flag),
+            Preset::Pair(pair) => {
+                let mut seq = serializer.serialize_seq(Some(2))?;
+                seq.serialize_element(&pair[0])?;
+                seq.serialize_element(&pair[1])?;
+                seq.end()
+            }
+            Preset::Effect => serializer.serialize_str("effect"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize)]
+pub struct Knob {
+    pub name: &'static str,
+    pub control: Control,
+    pub min: f32,
+    pub max: f32,
+    pub step: f32,
+    #[serde(skip_serializing_if = "<[&str]>::is_empty")]
+    pub options: &'static [&'static str],
+    pub preset: Preset,
+    /// One line for the row, saying what the knob does rather than what it is.
+    pub says: &'static str,
+}
+
+const fn range(name: &'static str, min: f32, max: f32, step: f32, preset: f32, says: &'static str) -> Knob {
+    Knob { name, control: Control::Range, min, max, step, options: &[], preset: Preset::Number(preset), says }
+}
+
+const DIRECTIONS: &[&str] = &["right", "left", "up", "down", "cw", "ccw", "out", "in"];
+
+const KNOBS: &[Knob] = &[
+    // --- motion
+    range("speed", 0.05, 4.0, 0.05, 1.0,
+        "How fast it moves. Changing it never makes the picture jump."),
+    Knob { name: "direction", control: Control::Choice, min: 0.0, max: 0.0, step: 0.0,
+        options: DIRECTIONS, preset: Preset::Effect,
+        says: "Which way it travels. Unset means the effect's own axis." },
+    Knob { name: "cycle", control: Control::Choice, min: 0.0, max: 0.0, step: 0.0,
+        options: &["wrap", "bounce"], preset: Preset::Text("wrap"),
+        says: "Start again from the far side, or turn round and come back." },
+
+    // --- size and amount
+    range("scale", 0.25, 4.0, 0.05, 1.0,
+        "Multiplies every length. This is what decides whether a feature is wider than the seam."),
+    range("density", 0.1, 3.0, 0.1, 1.0,
+        "How many of them: bars, rings, streaks, stars, blobs."),
+    range("softness", 0.0, 1.0, 0.01, 0.55,
+        "A hard edge at nothing, feathered across the whole half-width at one."),
+    Knob { name: "origin", control: Control::Pair, min: 0.0, max: 1.0, step: 0.01,
+        options: &[], preset: Preset::Pair([0.5, 0.5]),
+        says: "Where it comes from. The middle is the centre of the seam, so a ring arrives already sixteen pixels across." },
+
+    // --- colour
+    Knob { name: "color", control: Control::Color, min: 0.0, max: 0.0, step: 0.0,
+        options: &[], preset: Preset::Text("#50a0ff"), says: "The hottest pixels." },
+    Knob { name: "color2", control: Control::Color, min: 0.0, max: 0.0, step: 0.0,
+        options: &[], preset: Preset::Text(""),
+        says: "The second stop. Unset is the first lightened, so two colours look deliberate for free." },
+    Knob { name: "background", control: Control::Color, min: 0.0, max: 0.0, step: 0.0,
+        options: &[], preset: Preset::Text("#08090c"),
+        says: "The fill under everything. A near-black: true black beside lit plastic reads as broken." },
+    range("color_cycle", 0.0, 1800.0, 10.0, 0.0,
+        "Seconds for one slow drift between the two colours. Off at nothing."),
+
+    // --- light
+    range("opacity", 0.0, 1.0, 0.01, 1.0,
+        "The master fade. Not the backlight."),
+    range("seed", 0.0, 999.0, 1.0, 0.0,
+        "A different arrangement with the same character."),
+
+    // --- geometry, clock, manners
+    Knob { name: "mapping", control: Control::Choice, min: 0.0, max: 0.0, step: 0.0,
+        options: &["physical", "packed"], preset: Preset::Effect,
+        says: "Physical keeps shapes true across the gaps; packed keeps a front at constant speed." },
+    range("fps", 1.0, 30.0, 1.0, 15.0,
+        "Frames a second. Smoothness costs time on the wire, not a busy core."),
+    Knob { name: "stop_after", control: Control::Duration, min: 0.0, max: 0.0, step: 0.0,
+        options: &[], preset: Preset::Text("0s"),
+        says: "Hold the last frame after this long, so a scene you work in settles. Never, at zero." },
+    Knob { name: "reduce_motion", control: Control::Flag, min: 0.0, max: 0.0, step: 0.0,
+        options: &[], preset: Preset::Flag(true),
+        says: "Paint one still frame when macOS asks for less motion." },
+
+    // --- one effect each
+    range("shear", -2.0, 2.0, 0.05, 0.0, "Tilts the bar into a diagonal wipe."),
+    range("fill", 0.0, 1.0, 0.05, 0.0, "A bare line at nothing, liquid in a tank at a half."),
+    range("bands", 0.0, 8.0, 1.0, 0.0, "A smooth field at nothing, soft curtains at three to five."),
+    range("wind", -4.0, 4.0, 0.05, 0.0,
+        "Sideways drift. Past about four tenths use physical, or the slant kinks at a seam."),
+    Knob { name: "lobes", control: Control::Pair, min: 1.0, max: 8.0, step: 1.0,
+        options: &[], preset: Preset::Pair([1.0, 1.0]),
+        says: "One and one an ellipse, three and two a knot, two and one a figure of eight." },
+    range("trail", 0.0, 4.0, 0.05, 0.30,
+        "Seconds of the past still drawn. At nothing the head crosses a seam invisibly."),
+    range("exponent", 1.0, 4.0, 0.1, 2.4, "A drift at one, perspective at two and a half, a violent jump at four."),
+    range("threshold", 0.02, 8.0, 0.02, 1.0,
+        "At one a blob ends at its own radius. Lower and everything merges."),
+    range("height", 0.05, 1.0, 0.01, 0.75, "How far up the dock the flame reaches."),
+    range("smoke", 0.0, 1.0, 0.01, 0.0, "Dissolve the tip into the background."),
+    Knob { name: "shape", control: Control::Choice, min: 0.0, max: 0.0, step: 0.0,
+        options: &["sine", "ease", "heartbeat"], preset: Preset::Text("sine"),
+        says: "Which breath." },
+    range("floor", 0.0, 1.0, 0.01, 0.06,
+        "The level at the bottom of a breath. Above zero, so the dock never looks switched off."),
+];
+
+/// The descriptor for a knob name, or `None` if nothing goes by that name.
+pub fn knob(name: &str) -> Option<&'static Knob> {
+    KNOBS.iter().find(|knob| knob.name == name)
+}
+
+/// The descriptor for a name this crate wrote itself.
+///
+/// Panics on an unknown name, which `every_knob_an_effect_offers_has_a_row`
+/// makes impossible to reach: the only names passed here are the ones the
+/// catalogue offers, and that test walks all of them.
+pub fn k(name: &'static str) -> &'static Knob {
+    knob(name).unwrap_or_else(|| panic!("no knob called {name:?}"))
+}
+
+impl Knob {
+    /// The value to use, clamped to what the daemon will actually honour.
+    pub fn number(&self, value: Option<f32>) -> f32 {
+        let fallback = match self.preset {
+            Preset::Number(number) => number,
+            _ => 0.0,
+        };
+        value.unwrap_or(fallback).clamp(self.min, self.max)
+    }
+
+    pub fn count(&self, value: Option<u8>) -> u8 {
+        self.number(value.map(f32::from)).round() as u8
+    }
+
+    pub fn pair(&self, value: Option<[f32; 2]>) -> (f32, f32) {
+        let fallback = match self.preset {
+            Preset::Pair(pair) => pair,
+            _ => [0.0, 0.0],
+        };
+        let pair = value.unwrap_or(fallback);
+        (
+            pair[0].clamp(self.min, self.max),
+            pair[1].clamp(self.min, self.max),
+        )
     }
 }

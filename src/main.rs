@@ -1312,7 +1312,13 @@ fn serve(
                         "mapping": effect.mapping(),
                         "period": effect.period(),
                         "direction": effect.dir(),
-                        "knobs": effect.knobs(),
+                        // The names with their rows attached: the editor draws
+                        // one control per entry and needs no table of its own.
+                        "knobs": effect
+                            .knobs()
+                            .iter()
+                            .filter_map(|name| canvas::knob(name))
+                            .collect::<Vec<_>>(),
                     }))
                     .collect::<Vec<_>>(),
             }));

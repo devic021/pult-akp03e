@@ -9,7 +9,7 @@ use anyhow::{bail, Context, Result};
 use image::Rgb;
 use serde::{Deserialize, Serialize};
 
-use crate::canvas::Style;
+use crate::canvas::{k, Style};
 
 /// Starter config written on first run, so the daemon has something to show.
 pub const EXAMPLE: &str = include_str!("../config.example.toml");
@@ -341,7 +341,7 @@ impl Surface {
     /// no `unwrap_or` for any of these values exists anywhere else.
     pub fn style(&self, tau: f32, effect: crate::canvas::Effect) -> Result<Style> {
         let c = self.parse(self.color.as_deref(), "color")?.unwrap_or(Self::COLOR);
-        let k = match self.parse(self.color2.as_deref(), "color2")? {
+        let second = match self.parse(self.color2.as_deref(), "color2")? {
             Some(colour) => colour,
             None => crate::canvas::mix(c, Rgb([255, 255, 255]), 0.55),
         };
@@ -351,49 +351,59 @@ impl Surface {
 
         // A slow drift between the two stops, in tau-seconds like every other
         // period here, so the speed knob carries the colour with it.
-        let (c, k) = match self.color_cycle {
+        let (c, second) = match self.color_cycle {
             Some(seconds) if seconds > 0.01 => {
                 let u = 0.5 - 0.5 * (std::f32::consts::TAU * tau / seconds).cos();
-                (crate::canvas::mix(c, k, u), crate::canvas::mix(k, c, u))
+                (
+                    crate::canvas::mix(c, second, u),
+                    crate::canvas::mix(second, c, u),
+                )
             }
-            _ => (c, k),
+            _ => (c, second),
         };
 
-        let origin = self.origin.unwrap_or([0.5, 0.5]);
-        let lobes = self.lobes.unwrap_or([1, 1]);
+        // Every number below comes from the knob table, which is also what
+        // the editor is told the slider's ends are. One table, so a slider
+        // cannot run past what the daemon will honour and look broken near
+        // its end.
+        let origin = k("origin").pair(self.origin);
+        let lobes = k("lobes").pair(
+            self.lobes
+                .map(|lobes| [f32::from(lobes[0]), f32::from(lobes[1])]),
+        );
 
         Ok(Style {
             c,
-            k,
+            k: second,
             background,
-            opacity: self.opacity.unwrap_or(1.0).clamp(0.0, 1.0),
-            softness: self.softness.unwrap_or(0.55).clamp(0.0, 1.0),
-            scale: self.scale.unwrap_or(1.0).clamp(0.25, 4.0),
-            density: self.density.unwrap_or(1.0).clamp(0.1, 3.0),
+            opacity: k("opacity").number(self.opacity),
+            softness: k("softness").number(self.softness),
+            scale: k("scale").number(self.scale),
+            density: k("density").number(self.density),
             dir: self.direction.unwrap_or_else(|| effect.dir()),
             cycle: self.cycle.unwrap_or_default(),
-            origin: (origin[0].clamp(0.0, 1.0), origin[1].clamp(0.0, 1.0)),
-            seed: self.seed.unwrap_or(0),
+            origin,
+            seed: k("seed").number(self.seed.map(|seed| seed as f32)) as u32,
             clear: true,
-            shear: self.shear.unwrap_or(0.0).clamp(-2.0, 2.0),
-            fill: self.fill.unwrap_or(0.0).clamp(0.0, 1.0),
-            bands: self.bands.unwrap_or(0).min(8),
-            wind: self.wind.unwrap_or(0.0).clamp(-4.0, 4.0),
-            lobes: (lobes[0].clamp(1, 8), lobes[1].clamp(1, 8)),
-            trail: self.trail.unwrap_or(0.30).clamp(0.0, 4.0),
-            exponent: self.exponent.unwrap_or(2.4).clamp(1.0, 4.0),
-            threshold: self.threshold.unwrap_or(1.0).clamp(0.02, 8.0),
-            height: self.height.unwrap_or(0.75).clamp(0.05, 1.0),
-            smoke: self.smoke.unwrap_or(0.0).clamp(0.0, 1.0),
+            shear: k("shear").number(self.shear),
+            fill: k("fill").number(self.fill),
+            bands: k("bands").count(self.bands),
+            wind: k("wind").number(self.wind),
+            lobes: (lobes.0.round() as u8, lobes.1.round() as u8),
+            trail: k("trail").number(self.trail),
+            exponent: k("exponent").number(self.exponent),
+            threshold: k("threshold").number(self.threshold),
+            height: k("height").number(self.height),
+            smoke: k("smoke").number(self.smoke),
             shape: self.shape.unwrap_or_default(),
-            floor: self.floor.unwrap_or(0.06).clamp(0.0, 1.0),
+            floor: k("floor").number(self.floor),
         })
     }
 
     /// How fast `tau` grows. Not part of `Style`: no effect may read it, which
     /// is exactly what stops a speed change from moving the picture.
     pub fn speed(&self) -> f32 {
-        self.speed.unwrap_or(1.0).clamp(0.05, 4.0)
+        k("speed").number(self.speed)
     }
 
     pub fn mapping_for(&self, effect: crate::canvas::Effect) -> crate::canvas::Mapping {
@@ -401,7 +411,7 @@ impl Surface {
     }
 
     pub fn fps_for(&self, effect: crate::canvas::Effect) -> u8 {
-        self.fps.unwrap_or_else(|| effect.fps()).clamp(1, 30)
+        k("fps").count(Some(self.fps.unwrap_or_else(|| effect.fps())))
     }
 
     /// How long motion runs before the last frame simply stays. `None` means

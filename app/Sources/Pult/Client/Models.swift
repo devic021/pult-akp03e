@@ -239,14 +239,25 @@ struct DeckScene: Codable, Equatable {
     var keys: [Key] = []
     var buttons: [Action] = []
     var encoders: [Knob] = []
+    /// One drawing across the whole dock, instead of six separate pictures.
+    /// Absent means six keys, which is what every scene was until canvases
+    /// existed, so an older config keeps its meaning exactly.
+    var surface: Surface?
 
-    enum CodingKeys: String, CodingKey { case apps, keys, buttons, encoders }
+    enum CodingKeys: String, CodingKey { case apps, keys, buttons, encoders, surface }
 
-    init(apps: [String] = [], keys: [Key] = [], buttons: [Action] = [], encoders: [Knob] = []) {
+    init(
+        apps: [String] = [],
+        keys: [Key] = [],
+        buttons: [Action] = [],
+        encoders: [Knob] = [],
+        surface: Surface? = nil
+    ) {
         self.apps = apps
         self.keys = keys
         self.buttons = buttons
         self.encoders = encoders
+        self.surface = surface
     }
 
     init(from decoder: Decoder) throws {
@@ -255,13 +266,14 @@ struct DeckScene: Codable, Equatable {
         keys = try values.decodeIfPresent([Key].self, forKey: .keys) ?? []
         buttons = try values.decodeIfPresent([Action].self, forKey: .buttons) ?? []
         encoders = try values.decodeIfPresent([Knob].self, forKey: .encoders) ?? []
+        surface = try values.decodeIfPresent(Surface.self, forKey: .surface)
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: DeckScene.known) ?? [:]
     }
 
-    /// A scene's surface kind and anything else a newer daemon added.
+    /// Anything a newer daemon added that this version has no case for.
     var extra: [String: JSONValue] = [:]
 
-    private static let known: Set<String> = ["apps", "keys", "buttons", "encoders"]
+    private static let known: Set<String> = ["apps", "keys", "buttons", "encoders", "surface"]
 
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
@@ -269,6 +281,7 @@ struct DeckScene: Codable, Equatable {
         if !keys.isEmpty { try values.encode(keys, forKey: .keys) }
         if !buttons.isEmpty { try values.encode(buttons, forKey: .buttons) }
         if !encoders.isEmpty { try values.encode(encoders, forKey: .encoders) }
+        try values.encodeIfPresent(surface, forKey: .surface)
         try encoder.encodeExtra(extra)
     }
 
