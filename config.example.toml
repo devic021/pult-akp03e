@@ -520,18 +520,28 @@ encoders = [
 # the press. Button 1 is left on "back to general" so a canvas scene can always
 # be left — nothing on screen says what the keys do.
 
-[scenes.talas]
+[scenes.prelet]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" } },
-  { cw = { scene = "puls" }, ccw = { scene = "kisa" } },
+  { cw = { scene = "talas" }, ccw = { scene = "dah" } },
   { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
 ]
+[scenes.prelet.surface]
+kind = "canvas"
+effect = "sweep"
+color = "#ffffff"
+background = "#06070a"
+shear = 0.25              # its own: tilts the bar into a diagonal wipe
+
+[scenes.talas]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.talas.surface]
 kind = "canvas"
 effect = "wave"
 color = "#4da3ff"
 background = "#070a10"
+fill = 0.45               # its own: liquid in a tank instead of a bare line
 
 [scenes.puls]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
@@ -540,6 +550,8 @@ kind = "canvas"
 effect = "pulse"
 color = "#c3a2ff"
 background = "#08070f"
+origin = [0.5, 0.5]       # its own: rings are born in the middle of the seam,
+                          # so they appear already sixteen pixels across
 
 [scenes.kisa]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
@@ -548,6 +560,8 @@ kind = "canvas"
 effect = "rain"
 color = "#32d074"
 background = "#060a07"
+wind = 0.25               # its own: sideways drift. Past about 0.4 add
+                          # mapping = "physical", or the slant kinks at a seam
 
 [scenes.zora]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
@@ -555,15 +569,69 @@ buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "c
 kind = "canvas"
 effect = "aurora"
 color = "#ff8a3d"
+color2 = "#ffe3b0"
 background = "#0b0608"
+bands = 4                 # its own: 0 a smooth field, 3-5 soft curtains
+color_cycle = 600         # ten minutes for one drift, so it is a different
+                          # colour every time you happen to glance at it
 
-[scenes.prelet]
+[scenes.orbita]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
-[scenes.prelet.surface]
+[scenes.orbita.surface]
 kind = "canvas"
-effect = "sweep"
-color = "#ffffff"
+effect = "orbit"
+color = "#4da3ff"
 background = "#06070a"
+lobes = [3, 2]            # its own: 1,1 an ellipse; 3,2 a knot; 2,1 a figure
+                          # of eight
+trail = 0.45              # its own: seconds of the past still drawn. This is
+                          # what carries the head across sixteen pixels of
+                          # plastic — at 0 it crosses invisibly
+
+[scenes.skok]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.skok.surface]
+kind = "canvas"
+effect = "warp"
+color = "#9fd0ff"
+background = "#04050a"
+exponent = 2.8            # its own: 1 a drift, 2.4 perspective, 4 a violent
+                          # jump to light speed
+density = 1.6             # more stars; the count knob is shared by all ten
+
+[scenes.lava]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.lava.surface]
+kind = "canvas"
+effect = "lava"
+color = "#ff5a2d"
+color2 = "#ffd27a"
+background = "#0a0604"
+threshold = 1.0           # its own: 1.0 is a blob that ends at its own radius.
+                          # Lower and it reaches further and everything merges
+speed = 0.6               # slower than life, which is the whole point of it
+
+[scenes.vatra]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.vatra.surface]
+kind = "canvas"
+effect = "ember"
+color = "#ff7a18"
+color2 = "#fff0c0"
+background = "#080402"
+height = 0.8              # its own: how far up the dock the flame reaches
+smoke = 0.35              # its own: dissolve the tip into the background
+
+[scenes.dah]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.dah.surface]
+kind = "canvas"
+effect = "breathe"
+color = "#2d6fff"
+background = "#04050a"
+shape = "heartbeat"       # its own: sine | ease | heartbeat
+floor = 0.08              # its own: the level at the bottom of a breath. Keep
+                          # it above zero so the dock never looks switched off
 
 # ================================================================== mirovanje
 # When nobody has touched the Mac for a while the dock stops being a controller
@@ -582,6 +650,19 @@ background = "#06070a"
 [idle]
 after = "3m"
 scene = "zora"
+
+# Or a playlist, which wins over `scene`. Each member is a whole scene, so
+# every one keeps its own effect, colours, geometry and frame rate — and each
+# can be judged on its own before it goes in here.
+scenes = ["zora", "lava", "vatra", "dah"]
+hold = "5m"            # how long each member runs
+fade = 2.5             # seconds of cross-dissolve between them. A hard cut in
+                       # the corner of your eye reads as a fault, so not 0
+fade_in = 1.5          # seconds to come up from nothing when it starts, so it
+                       # arrives instead of appearing
+wake_on = "any"        # any | dock. "dock" is what you want when you are
+                       # reading a second screen and would rather it kept going
+
 brightness = 35
 dark_when_display_sleeps = false
 swallow_first_press = true

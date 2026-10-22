@@ -305,6 +305,10 @@ pub struct Surface {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exponent: Option<f32>,
     /// `lava`: low merges everything, high separates islands.
+    ///
+    /// 1.0 is where a blob ends at the radius `scale` gives it. Below that it
+    /// reaches further than its radius — at 0.4 it reaches 1.58 times as far,
+    /// which with five blobs is the whole dock lit and nothing to look at.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub threshold: Option<f32>,
     /// `ember`: how far up the span the flame reaches.
@@ -378,7 +382,7 @@ impl Surface {
             lobes: (lobes[0].clamp(1, 8), lobes[1].clamp(1, 8)),
             trail: self.trail.unwrap_or(0.30).clamp(0.0, 4.0),
             exponent: self.exponent.unwrap_or(2.4).clamp(1.0, 4.0),
-            threshold: self.threshold.unwrap_or(0.40).clamp(0.02, 4.0),
+            threshold: self.threshold.unwrap_or(1.0).clamp(0.02, 8.0),
             height: self.height.unwrap_or(0.75).clamp(0.05, 1.0),
             smoke: self.smoke.unwrap_or(0.0).clamp(0.0, 1.0),
             shape: self.shape.unwrap_or_default(),

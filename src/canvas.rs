@@ -757,11 +757,18 @@ fn aurora(canvas: &mut Canvas, tau: f32, style: &Style) {
         for x in 0..canvas.width() {
             let fx = (x as f32 + drift_x) / width;
             let fy = (y as f32 + drift_y) / height;
-            let field = (fx * 2.4 * nu + tau * 0.23 + o1).sin()
-                + (fy * 3.1 * nu - tau * 0.17 + o2).cos()
-                + 0.5 * ((fx + fy) * 1.7 * nu + tau * 0.11 + o3).sin();
+            // Between two and three cycles across the dock. Less than one —
+            // which is what 2.4 radians over a 0..1 fraction gives — is not a
+            // field, it is a gradient, and on the contact sheet it read as one
+            // flat wash that barely moved.
+            let field = (fx * 6.0 * nu + tau * 0.23 + o1).sin()
+                + (fy * 4.6 * nu - tau * 0.17 + o2).cos()
+                + 0.5 * ((fx + fy) * 3.4 * nu + tau * 0.11 + o3).sin();
 
-            let mut n = (field / 2.5 * 0.5 + 0.5).clamp(0.0, 1.0);
+            // Divided by 2.0, not 2.5: the three sines almost never all peak at
+            // once, so normalising by the arithmetic maximum left the field
+            // sitting in the middle of its range with no contrast anywhere.
+            let mut n = (field / 2.0 * 0.5 + 0.5).clamp(0.0, 1.0);
             if style.bands > 0 {
                 let bands = f32::from(style.bands);
                 let stepped = n * bands;
@@ -772,8 +779,11 @@ fn aurora(canvas: &mut Canvas, tau: f32, style: &Style) {
             // The light leans the way the field travels, so a direction still
             // means something to an effect with no front to move.
             let (p, _, _, _) = axis(style.dir, x as f32, y as f32, width, height);
-            let tilt = 0.4 + 0.6 * (p / span);
-            style.put(canvas, x as f32, y as f32, style.tint(n), n * 0.55 * tilt);
+            let tilt = 0.55 + 0.45 * (p / span);
+            // 0.85, not 0.55. An aurora is meant to be quiet, not absent, and
+            // at a third of an alpha with nothing to track it read as a dock
+            // that had failed to paint.
+            style.put(canvas, x as f32, y as f32, style.tint(n), n * 0.85 * tilt);
         }
     }
 }
@@ -790,7 +800,10 @@ fn orbit(canvas: &mut Canvas, tau: f32, style: &Style) {
     let (drift_x, drift_y) = wander(tau);
 
     let bodies = style.density.round().clamp(1.0, 4.0) as u32;
-    let radius = 5.0 * style.scale;
+    // Ten, not five. Five is a scratch at arm's length; ten reads as an object
+    // while still being smaller than the sixteen-pixel seam, so the trail is
+    // still what carries it across the plastic rather than its own width.
+    let radius = 10.0 * style.scale;
     let spin = if style.dir == Dir::Ccw || style.dir == Dir::Left {
         -1.0
     } else {
@@ -883,6 +896,13 @@ fn warp(canvas: &mut Canvas, tau: f32, style: &Style) {
             let colour = style.tint(1.0 - age);
             style.put(canvas, x, y, colour, alpha);
             style.put(canvas, x + 1.0, y, colour, alpha * 0.55);
+            // A one-pixel star is invisible on glass with a bezel through the
+            // middle, and the fast ones are exactly the ones worth seeing, so
+            // a star thickens as it goes out.
+            if t > 0.45 {
+                style.put(canvas, x, y + 1.0, colour, alpha * 0.55);
+                style.put(canvas, x + 1.0, y + 1.0, colour, alpha * 0.3);
+            }
         }
     }
 }
@@ -961,8 +981,14 @@ fn ember(canvas: &mut Canvas, tau: f32, style: &Style) {
                 + 0.15 * (q * 0.21 / nu - (p + tau * 119.0) * 0.17 / nu + phase2).sin()
                 + 0.12 * (q * 0.045 / nu + tau * 0.9).sin();
 
-            let alpha = style.feather(((1.0 - f / reach) * 2.0 * turbulence).clamp(0.0, 1.0));
-            if alpha <= 0.0 {
+            // `feather` is an edge rule: anything past `softness` of the way
+            // in is fully inside. A flame has no edge along its height — it
+            // has a falloff — so feeding the height into it painted the bottom
+            // half of the dock as one solid block. The falloff is the value
+            // itself, and `softness` shapes how fast it goes.
+            let fade = (1.0 - f / reach).max(0.0);
+            let alpha = (fade.powf(1.0 + 2.0 * style.softness) * turbulence * 1.8).clamp(0.0, 1.0);
+            if alpha <= 0.002 {
                 continue;
             }
             // Hot at the base, cooling as it climbs, and dissolving into the
@@ -1039,7 +1065,7 @@ mod tests {
             lobes: (1, 1),
             trail: 0.30,
             exponent: 2.4,
-            threshold: 0.40,
+            threshold: 1.0,
             height: 0.75,
             smoke: 0.0,
             shape: Shape::Sine,
