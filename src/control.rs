@@ -112,7 +112,16 @@ pub enum Request {
     /// Show a page of the current scene.
     Page { value: usize },
     /// Write a boot logo into the device, which is the one thing it keeps.
-    BootLogo { path: String },
+    ///
+    /// Without a path it writes a plain fill instead, which is the only way to
+    /// take a logo off: the dock will hand back no picture, so the factory one
+    /// cannot be restored and a blank is what "remove" can honestly mean.
+    BootLogo {
+        #[serde(default)]
+        path: Option<String>,
+        #[serde(default)]
+        color: Option<String>,
+    },
     /// Blank the dock, or wake it.
     Sleep,
     Wake,

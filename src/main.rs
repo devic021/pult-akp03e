@@ -1417,13 +1417,36 @@ fn serve(
             Ok(true)
         }
 
-        Request::BootLogo { path } => {
-            // The only thing the dock keeps when it is unplugged.
-            match image::open(&path)
-                .map_err(anyhow::Error::from)
+        Request::BootLogo { path, color } => {
+            // The only thing the dock keeps when it is unplugged — and keeps
+            // showing, since it is the panel's own backdrop and nothing here
+            // sends it again after the one write.
+            let picture = match &path {
+                Some(path) => image::open(path).map_err(anyhow::Error::from),
+                None => {
+                    // The device's own logo size, not a guess: a fill of the
+                    // wrong shape would be scaled and could leave an edge.
+                    let (width, height) = found
+                        .kind
+                        .boot_logo_size()
+                        .unwrap_or((320, 240));
+                    let fill = color
+                        .as_deref()
+                        .map(pult::render::parse_color)
+                        .transpose()?
+                        .unwrap_or(image::Rgb([0, 0, 0]));
+                    Ok(image::DynamicImage::ImageRgb8(image::RgbImage::from_pixel(
+                        width as u32,
+                        height as u32,
+                        fill,
+                    )))
+                }
+            };
+
+            match picture
                 .and_then(|image| device.set_logo_image(image).map_err(anyhow::Error::from))
             {
-                Ok(()) => reply.ok(json!({ "written": true })),
+                Ok(()) => reply.ok(json!({ "written": true, "cleared": path.is_none() })),
                 Err(e) => reply.fail(format!("{e:#}")),
             }
             Ok(false)

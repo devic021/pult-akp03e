@@ -74,6 +74,12 @@ final class L10n: ObservableObject {
     }
 
     static let en: [String: String] = [
+        "device.bootLogo.clear": "Remove",
+        "device.bootLogo.clear.help": "Writes a black panel over it. The dock hands no picture back, so the one it came with cannot be restored \u{2014} this is what removing can mean.",
+        "device.bootLogo.cleared": "Removed from the dock",
+        "device.bootLogo.default": "Pult mark",
+        "device.bootLogo.default.help": "Pult's own, drawn at the size the dock asked for.",
+        "device.bootLogo.failed": "The picture could not be drawn.",
         "welcome.says": "Pult drives an Ajazz AKP03E from this Mac. Two things before it can: a small background service, and permission for it to press keys on your behalf.",
         "welcome.permission": "Let it press keys",
         "welcome.permission.says": "Keys bound to a shortcut need this. System Settings \u{203A} Privacy & Security \u{203A} Device Control and Data Access \u{2014} tick pultd there. It was called Accessibility before macOS 27.",
@@ -349,6 +355,12 @@ final class L10n: ObservableObject {
     ]
 
     static let sr: [String: String] = [
+        "device.bootLogo.clear": "Ukloni",
+        "device.bootLogo.clear.help": "Upisuje crnu povr\u{161}inu preko. Dok ne vra\u{107}a nikakvu sliku nazad, pa se fabri\u{10d}ka ne mo\u{17e}e povratiti \u{2014} ovo je ono \u{161}to uklanjanje mo\u{17e}e da zna\u{10d}i.",
+        "device.bootLogo.cleared": "Uklonjeno sa ure\u{111}aja",
+        "device.bootLogo.default": "Pult znak",
+        "device.bootLogo.default.help": "Pultov sopstveni, nacrtan u veli\u{10d}ini koju je dok tra\u{17e}io.",
+        "device.bootLogo.failed": "Slika nije mogla da se nacrta.",
         "welcome.says": "Pult vodi Ajazz AKP03E sa ovog Mac-a. Dve stvari pre nego \u{161}to mo\u{17e}e: mali pozadinski servis, i dozvola da u tvoje ime pritiska tastere.",
         "welcome.permission": "Dozvoli mu da pritiska tastere",
         "welcome.permission.says": "Tasteri vezani za pre\u{10d}icu ovo tra\u{17e}e. Pode\u{161}avanja sistema \u{203A} Privatnost i bezbednost \u{203A} Kontrola ure\u{111}aja i pristup podacima \u{2014} \u{10d}ekiraj pultd tamo. Pre macOS 27 se zvalo Pristupa\u{10d}nost.",

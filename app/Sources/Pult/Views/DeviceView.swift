@@ -98,8 +98,30 @@ struct DeviceView: View {
                     detail: T("device.bootLogo.help")
                 ) {
                     VStack(alignment: .trailing, spacing: 6) {
-                        Button(T("device.bootLogo.choose")) { chooseLogo() }
+                        HStack(spacing: 8) {
+                            // Clearing is a write, not an undo: the dock hands
+                            // nothing back, so the factory logo is gone the
+                            // moment the first one is written and the honest
+                            // options are Pult's own mark or a blank panel.
+                            Button(T("device.bootLogo.clear")) {
+                                state.writeBootLogo(nil) { failure in
+                                    logoMessage = failure ?? T("device.bootLogo.cleared")
+                                }
+                            }
                             .buttonStyle(.pult)
+                            .help(T("device.bootLogo.clear.help"))
+
+                            Button(T("device.bootLogo.default")) {
+                                state.writePultLogo { failure in
+                                    logoMessage = failure ?? T("device.bootLogo.written")
+                                }
+                            }
+                            .buttonStyle(.pult)
+                            .help(T("device.bootLogo.default.help"))
+
+                            Button(T("device.bootLogo.choose")) { chooseLogo() }
+                                .buttonStyle(.pult)
+                        }
                         if let size = state.status?.device?.boot_logo, size.count == 2 {
                             Text("\(size[0])×\(size[1])")
                                 .font(.appCaption.monospacedDigit())

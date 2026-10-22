@@ -362,16 +362,65 @@ final class AppState: ObservableObject {
     func sleepDock() { fireAndForget(["cmd": "sleep"]) }
     func wakeDock() { fireAndForget(["cmd": "wake"]) }
 
-    func writeBootLogo(_ url: URL, then report: @escaping (String?) -> Void) {
+    /// Writes a picture into the dock's own memory, or blanks it.
+    ///
+    /// `nil` clears it. There is no restoring the factory logo: the dock will
+    /// hand nothing back, so the only honest "remove" is to write over it.
+    func writeBootLogo(_ url: URL?, then report: @escaping (String?) -> Void) {
+        var body: [String: Any] = ["cmd": "boot_logo"]
+        if let url { body["path"] = url.path }
+
         io.async { [client] in
             var message: String?
             do {
-                try client.send(["cmd": "boot_logo", "path": url.path])
+                try client.send(body)
             } catch {
                 message = error.localizedDescription
             }
             Task { @MainActor in report(message) }
         }
+    }
+
+    /// Puts Pult's own mark on the dock, as near to a default as there is.
+    ///
+    /// Drawn from the application icon at the size the dock asked for, rather
+    /// than shipped as a second copy of the same artwork.
+    func writePultLogo(then report: @escaping (String?) -> Void) {
+        let size = status?.device?.boot_logo
+        let width = size?.first ?? 320
+        let height = (size?.count ?? 0) > 1 ? size![1] : 240
+
+        let canvas = NSImage(size: NSSize(width: width, height: height))
+        canvas.lockFocus()
+        NSColor.black.setFill()
+        NSRect(x: 0, y: 0, width: width, height: height).fill()
+        let mark = NSApp.applicationIconImage!
+        let side = CGFloat(min(width, height)) * 0.62
+        mark.draw(in: NSRect(
+            x: (CGFloat(width) - side) / 2,
+            y: (CGFloat(height) - side) / 2,
+            width: side,
+            height: side
+        ))
+        canvas.unlockFocus()
+
+        guard
+            let tiff = canvas.tiffRepresentation,
+            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+        else {
+            report(T("device.bootLogo.failed"))
+            return
+        }
+
+        let file = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appending(path: "pult-logo.png")
+        do {
+            try png.write(to: file)
+        } catch {
+            report(error.localizedDescription)
+            return
+        }
+        writeBootLogo(file, then: report)
     }
 
     private func fireAndForget(_ request: [String: Any]) {
