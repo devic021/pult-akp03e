@@ -74,6 +74,7 @@ final class L10n: ObservableObject {
     }
 
     static let en: [String: String] = [
+        "rest.playlist.none": "No animations yet \u{2014} make one under Animations",
         "device.bootLogo.clear": "Remove",
         "device.bootLogo.clear.help": "Writes a black panel over it. The dock hands no picture back, so the one it came with cannot be restored \u{2014} this is what removing can mean.",
         "device.bootLogo.cleared": "Removed from the dock",
@@ -116,9 +117,9 @@ final class L10n: ObservableObject {
         "rest.wake.says": "Only the dock, when you are reading a second screen and would rather it kept painting.",
         "rest.swallow": "Swallow the waking press",
         "rest.swallow.says": "Slapping a key to wake the dock should not also fire what that key does.",
-        "rest.playlist": "Scenes it cycles through",
-        "rest.playlist.says": "Each is a whole scene, so each keeps its own motion, colours, geometry and frame rate.",
-        "rest.playlist.add": "Add a scene",
+        "rest.playlist": "Animations it cycles through",
+        "rest.playlist.says": "Each is a whole scene, so each keeps its own motion, colours, geometry and frame rate. Only drawings are offered \u{2014} a page of labelled keys is a controller, not something to look at from across the room.",
+        "rest.playlist.add": "Add an animation",
         "rest.playlist.missing": "not defined",
         "rest.hold": "Each one runs for",
         "rest.hold.says": "Five minutes is long enough to stop feeling like a slideshow.",
@@ -355,6 +356,7 @@ final class L10n: ObservableObject {
     ]
 
     static let sr: [String: String] = [
+        "rest.playlist.none": "Jo\u{161} nema animacija \u{2014} napravi je pod Animacije",
         "device.bootLogo.clear": "Ukloni",
         "device.bootLogo.clear.help": "Upisuje crnu povr\u{161}inu preko. Dok ne vra\u{107}a nikakvu sliku nazad, pa se fabri\u{10d}ka ne mo\u{17e}e povratiti \u{2014} ovo je ono \u{161}to uklanjanje mo\u{17e}e da zna\u{10d}i.",
         "device.bootLogo.cleared": "Uklonjeno sa ure\u{111}aja",
@@ -397,9 +399,9 @@ final class L10n: ObservableObject {
         "rest.wake.says": "Samo dok, kada \u{10d}ita\u{161} drugi ekran i radije bi da nastavi da crta.",
         "rest.swallow": "Progutaj pritisak koji budi",
         "rest.swallow.says": "Udarac po tasteru da probudi\u{161} dok ne sme da pokrene i ono \u{161}to taj taster radi.",
-        "rest.playlist": "Scene kroz koje kru\u{17e}i",
-        "rest.playlist.says": "Svaka je cela scena, pa svaka zadr\u{17e}ava svoj pokret, boje, geometriju i broj frejmova.",
-        "rest.playlist.add": "Dodaj scenu",
+        "rest.playlist": "Animacije kroz koje kru\u{17e}i",
+        "rest.playlist.says": "Svaka je cela scena, pa svaka zadr\u{17e}ava svoj pokret, boje, geometriju i broj frejmova. Nude se samo crte\u{17e}i \u{2014} strana sa obele\u{17e}enim tasterima je kontroler, a ne ne\u{161}to \u{161}to se gleda iz daljine.",
+        "rest.playlist.add": "Dodaj animaciju",
         "rest.playlist.missing": "nije definisana",
         "rest.hold": "Svaka traje",
         "rest.hold.says": "Pet minuta je dovoljno dugo da prestane da li\u{10d}i na slajd\u{161}ou.",

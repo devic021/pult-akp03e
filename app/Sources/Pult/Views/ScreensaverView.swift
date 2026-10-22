@@ -35,7 +35,7 @@ struct ScreensaverView: View {
                                 get: { idle != nil },
                                 set: { on in
                                     state.config.idle = on
-                                        ? Idle(scene: state.config.sceneNames.first ?? "")
+                                        ? Idle(scene: state.config.drawingScenes.first ?? "")
                                         : nil
                                 }
                             ))
@@ -187,8 +187,18 @@ private struct Playlist: View {
         VStack(spacing: 10) {
         ActionCard(T("rest.playlist"), symbol: "list.bullet", detail: T("rest.playlist.says")) {
             Menu {
-                ForEach(state.config.sceneNames, id: \.self) { name in
-                    Button(name) { add(name) }
+                // Drawings only. A scene of six labelled keys is a controller,
+                // and a controller is not what you want to be looking at from
+                // across the room — nor does it stop the dock burning the same
+                // six pictures into the same six screens, which is half of why
+                // this exists. A hand-written config naming one still works;
+                // the editor simply will not suggest it.
+                if state.config.drawingScenes.isEmpty {
+                    Text(T("rest.playlist.none"))
+                } else {
+                    ForEach(state.config.drawingScenes, id: \.self) { name in
+                        Button(name) { add(name) }
+                    }
                 }
             } label: {
                 Label(T("rest.playlist.add"), systemImage: "plus")
