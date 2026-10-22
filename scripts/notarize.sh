@@ -30,7 +30,10 @@ DMG="$DIST/Pult-$VERSION.dmg"
 
 [ -d "$APP" ] || "$ROOT/scripts/build-app.sh"
 
-if ! codesign -dv "$APP" 2>&1 | grep -q "Developer ID Application"; then
+# --verbose=2, not the default: `codesign -dv` on its own stops short of the
+# Authority lines, so this read a correctly signed build as unsigned and
+# refused to submit it.
+if ! codesign -dv --verbose=2 "$APP" 2>&1 | grep -q "Developer ID Application"; then
 	echo "This build is not signed with a Developer ID Application certificate," >&2
 	echo "so there is nothing Apple will notarise. Create one in Xcode under" >&2
 	echo "Settings > Accounts > Manage Certificates > + > Developer ID" >&2
