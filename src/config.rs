@@ -631,6 +631,40 @@ impl Config {
 
     /// Rejects what would otherwise fail silently at runtime: a missing default
     /// scene, a key bound to two actions, a `scene` action pointing nowhere.
+    /// Files the config names that are not there.
+    ///
+    /// Deliberately not part of `validate`. A renamed picture is not a reason
+    /// to refuse a whole configuration and leave the dock dark — that trade
+    /// was made once already for `sleep_image` and it was the wrong one. So
+    /// this is a list to print, naming the scene and the path, at the moment
+    /// the config is read rather than whenever that scene first comes up.
+    pub fn missing_files(&self) -> Vec<String> {
+        let mut missing = Vec::new();
+
+        if let Some(image) = self.idle.as_ref().and_then(|idle| idle.sleep_image.as_ref()) {
+            if !image.exists() {
+                missing.push(format!(
+                    "the sleep picture {} is not there; the dock will keep its last frame",
+                    image.display()
+                ));
+            }
+        }
+
+        for (name, scene) in &self.scenes {
+            let Some(source) = scene.canvas().and_then(|surface| surface.source.as_ref()) else {
+                continue;
+            };
+            if !source.exists() {
+                missing.push(format!(
+                    "scene {name:?} paints {}, which is not there; it will fall back to its effect",
+                    source.display()
+                ));
+            }
+        }
+
+        missing
+    }
+
     pub fn validate(&self) -> Result<()> {
         if !self.scenes.contains_key(&self.default) {
             bail!("default scene {:?} is not defined", self.default);

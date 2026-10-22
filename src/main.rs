@@ -231,6 +231,9 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     // Read when a config is loaded, not per frame: it is a preference, and the
     // daemon has no run loop to be notified on.
     let mut reduced = pult::idle::reduce_motion();
+    for line in state.config.missing_files() {
+        eprintln!("Config  : {line}");
+    }
     // The dock's own keys are not a keyboard, so CoreGraphics never sees them:
     // without this the dock would fall asleep under your hand.
     let mut touched = Instant::now();
@@ -242,6 +245,8 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     // showing something nobody saved.
     let mut trying: Option<(Surface, Instant)> = None;
     let mut trial_mark: Option<Instant> = None;
+    // Decoded once when the trial begins, not per frame.
+    let mut trial_film: Option<pult::animation::Animation> = None;
     // Told before the Mac goes down, so the frame it holds all night is one we
     // chose. Nothing here keeps the Mac awake — it only asks to paint first.
     let sleeping = power::watch_sleep();
@@ -318,6 +323,12 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             trial_mark = trial;
             painted_at = Instant::now();
             tau = 0.0;
+            // The file the trial names, decoded here and not on every frame.
+            // Without this the trial fell through to `Effect::Sweep` and showed
+            // a blue wipe whatever file you had picked — which is the one thing
+            // a trial must never do, since watching the real seams cut the real
+            // motion is the entire reason to run one.
+            trial_film = trying.as_ref().and_then(|(surface, _)| decode(surface, &found));
         }
 
         let surface = painting(state, &active, trying.as_ref());
@@ -458,7 +469,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             // and without one the dock dims itself.
             if let Some((surface, _)) = trying.as_ref() {
                 // While a trial is running the dock shows it and nothing else.
-                paint_canvas(&device, surface, &found, tau, None)?;
+                paint_canvas(&device, surface, &found, tau, trial_film.as_ref())?;
             } else {
                 let done = redraw(
                     &device,
@@ -481,6 +492,9 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             last_poll = Instant::now();
 
             if state.reload_if_changed() {
+                for line in state.config.missing_files() {
+                    eprintln!("Config  : {line}");
+                }
                 reduced = pult::idle::reduce_motion();
                 device.set_brightness(state.config.brightness.min(100))?;
                 active = state.config.scene_for(app.as_deref()).to_string();
@@ -737,6 +751,51 @@ fn render_preview(
 ///
 /// Held by scene name so switching back and forth does not decode twice, and
 /// dropped as soon as another scene brings its own.
+/// Decodes the file a surface names, if it names one.
+///
+/// Pulled out of the scene cache because a trial surface is not in the config
+/// and so cannot be looked up by scene name — and a trial that silently showed
+/// a blue sweep instead of the file you picked was defeating the only reason
+/// the trial exists.
+fn decode(surface: &Surface, found: &device::Found) -> Option<pult::animation::Animation> {
+    let source = surface.source.as_ref()?;
+    let effect = surface.effect.unwrap_or(canvas::Effect::Sweep);
+    let (rows, cols) = found.kind.key_layout();
+    let (size, _) = found.kind.key_image_format().size;
+    let background = surface
+        .style(0.0, effect)
+        .map(|style| style.background)
+        .unwrap_or(image::Rgb([8, 9, 12]));
+
+    match pult::animation::Animation::load(
+        source,
+        surface.mapping_for(effect),
+        cols as u32,
+        rows as u32,
+        size as u32,
+        surface.fps,
+        surface.fit,
+        surface.rotate,
+        background,
+    ) {
+        Ok(animation) => {
+            println!(
+                "Anim    : {} — {} frames, {:.1}s",
+                source.display(),
+                animation.frames(),
+                animation.duration().as_secs_f32()
+            );
+            Some(animation)
+        }
+        Err(e) => {
+            // A bad file leaves the surface on its effect, or on nothing:
+            // never on a dead dock.
+            eprintln!("animation {} will not load: {e:#}", source.display());
+            None
+        }
+    }
+}
+
 fn animation_for<'a>(
     loaded: &'a mut Option<(String, pult::animation::Animation)>,
     state: &State,
@@ -751,45 +810,10 @@ fn animation_for<'a>(
 
     let key = format!("{scene_name}:{}", source.display());
     if loaded.as_ref().is_none_or(|(held, _)| held != &key) {
-        let surface = state.config.scene(scene_name).and_then(|s| s.canvas());
-        let mapping = surface
-            .and_then(|s| s.mapping)
-            .unwrap_or(canvas::Mapping::Physical);
-        let fps = surface.and_then(|s| s.fps);
-        let (rows, cols) = found.kind.key_layout();
-        let (size, _) = found.kind.key_image_format().size;
-
-        let fit = surface.map(|s| s.fit).unwrap_or_default();
-        let rotate = surface.map(|s| s.rotate).unwrap_or(0);
-        let background = surface
-            .and_then(|s| s.background.as_deref())
-            .and_then(|c| pult::render::parse_color(c).ok())
-            .unwrap_or(image::Rgb([8, 9, 12]));
-
-        match pult::animation::Animation::load(
-            &source,
-            mapping,
-            cols as u32,
-            rows as u32,
-            size as u32,
-            fps,
-            fit,
-            rotate,
-            background,
-        ) {
-            Ok(animation) => {
-                println!(
-                    "Anim    : {} — {} frames, {:.1}s",
-                    source.display(),
-                    animation.frames(),
-                    animation.duration().as_secs_f32()
-                );
-                *loaded = Some((key, animation));
-            }
-            Err(e) => {
-                // A bad file leaves the scene on its effect, or on nothing:
-                // never on a dead dock.
-                eprintln!("animation {} will not load: {e:#}", source.display());
+        let surface = state.config.scene(scene_name).and_then(|s| s.canvas())?;
+        match decode(surface, found) {
+            Some(animation) => *loaded = Some((key, animation)),
+            None => {
                 *loaded = None;
                 return None;
             }
