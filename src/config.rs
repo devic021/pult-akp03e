@@ -76,6 +76,14 @@ fn yes() -> bool {
     true
 }
 
+fn is_default_fit(fit: &crate::animation::Fit) -> bool {
+    *fit == crate::animation::Fit::default()
+}
+
+fn is_zero(value: &u16) -> bool {
+    *value == 0
+}
+
 impl Idle {
     pub fn after(&self) -> Duration {
         crate::idle::parse_duration(&self.after).unwrap_or(Duration::from_secs(180))
@@ -95,9 +103,27 @@ impl Idle {
 pub struct Surface {
     #[serde(default)]
     pub kind: SurfaceKind,
-    /// Which motion a canvas runs.
+    /// Which motion a canvas runs. Ignored when `source` names a file.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub effect: Option<crate::canvas::Effect>,
+    /// An animation of your own, instead of a built-in effect.
+    ///
+    /// A GIF, an animated PNG, an animated WebP, a folder of numbered PNG or
+    /// JPEG frames, or one still picture. Decoded once when the scene is shown;
+    /// video formats are not accepted, and SVG animation is SMIL, which the
+    /// renderer does not implement.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<PathBuf>,
+    /// How a source that is not the canvas's shape is made to fit it.
+    ///
+    /// The dock is always landscape — 212x136, about 1.56:1 — so a portrait
+    /// animation has to lose its edges or gain bars at the sides. `cover`
+    /// crops, `contain` keeps all of it, `stretch` distorts.
+    #[serde(default, skip_serializing_if = "is_default_fit")]
+    pub fit: crate::animation::Fit,
+    /// Quarter turns applied before fitting, for a clip filmed sideways.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub rotate: u16,
     /// Override the geometry the effect would choose for itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<crate::canvas::Mapping>,
@@ -298,6 +324,11 @@ impl Config {
             }
         }
         for scene in self.scenes.values_mut() {
+            if let Some(surface) = scene.surface.as_mut() {
+                if let Some(source) = surface.source.take() {
+                    surface.source = Some(expand(&source));
+                }
+            }
             for key in scene.keys.iter_mut() {
                 // A bundled icon is a name, not a path; only a path can have a
                 // tilde in front of it.
@@ -342,8 +373,8 @@ impl Config {
             }
 
             if let Some(surface) = scene.canvas() {
-                if surface.effect.is_none() {
-                    bail!("scene {name:?} is a canvas but names no effect");
+                if surface.effect.is_none() && surface.source.is_none() {
+                    bail!("scene {name:?} is a canvas but names neither effect nor source");
                 }
                 for colour in [&surface.color, &surface.background].into_iter().flatten() {
                     crate::render::parse_color(colour)

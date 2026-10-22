@@ -205,7 +205,19 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     let mut app = frontmost::bundle_id();
     let mut active = state.config.scene_for(app.as_deref()).to_string();
     let mut page = 0;
-    paint(&device, state, &active, page, display_keys, &found)?;
+    // Decoded once, when a scene starts showing it: the loop has five
+    // milliseconds a frame and a full-size GIF costs more than that to decode.
+    let mut loaded: Option<(String, pult::animation::Animation)> = None;
+
+    paint(
+        &device,
+        state,
+        &active,
+        page,
+        display_keys,
+        &found,
+        animation_for(&mut loaded, state, &active, &found),
+    )?;
     report(app.as_deref(), &active, page, state.pages(&active, display_keys));
 
     let poll_every = Duration::from_millis(state.config.poll_ms.max(50));
@@ -218,6 +230,10 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     let mut resting = false;
     let mut dark = false;
     let mut swallow_press = false;
+    // A surface the editor is trying out, and when the trial lapses. Expiry
+    // rather than an explicit stop: a crashed editor must not leave the dock
+    // showing something nobody saved.
+    let mut trying: Option<(Surface, Instant)> = None;
     // Told before the Mac goes down, so the frame it holds all night is one we
     // chose. Nothing here keeps the Mac awake — it only asks to paint first.
     let sleeping = power::watch_sleep();
@@ -255,9 +271,10 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 app.as_deref(),
                 &mut active,
                 &mut page,
+                &mut trying,
             ) {
                 Ok(true) => {
-                    paint(&device, state, &active, page, display_keys, &found)?;
+                    paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                     painted_at = Instant::now();
                 }
                 Ok(false) => {}
@@ -265,7 +282,25 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             }
         }
 
-        let moving = pressed.is_some()
+        if let Some((_, until)) = trying {
+            if Instant::now() >= until {
+                trying = None;
+                paint(
+                    &device,
+                    state,
+                    &active,
+                    page,
+                    display_keys,
+                    &found,
+                    animation_for(&mut loaded, state, &active, &found),
+                )?;
+                painted_at = Instant::now();
+                println!("Try     : over");
+            }
+        }
+
+        let moving = trying.is_some()
+            || pressed.is_some()
             || state
                 .config
                 .scene(&active)
@@ -307,7 +342,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         Some(Step::Scene(scene)) => {
                             active = scene;
                             page = 0;
-                            paint(&device, state, &active, page, display_keys, &found)?;
+                            paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                             painted_at = Instant::now();
                             println!("Scene   : {active:?} (by key)");
                             control.publish(json!({
@@ -320,7 +355,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                             let pages = state.pages(&active, display_keys);
                             if target != page && target < pages {
                                 page = target;
-                                paint(&device, state, &active, page, display_keys, &found)?;
+                                paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                                 painted_at = Instant::now();
                                 println!("Page    : {} of {pages}", page + 1);
                                 control.publish(json!({
@@ -362,7 +397,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         resting = false;
                         dark = false;
                         device.set_brightness(state.config.brightness.min(100))?;
-                        paint(&device, state, &active, page, display_keys, &found)?;
+                        paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                         painted_at = Instant::now();
                     }
                 }
@@ -378,6 +413,18 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             if next_frame <= now {
                 next_frame = now + FRAME_INTERVAL;
             }
+            if let Some((surface, _)) = trying.as_ref() {
+                // While a trial is running the dock shows it and nothing else.
+                paint_canvas(
+                    &device,
+                    surface,
+                    &found,
+                    painted_at.elapsed().as_secs_f32(),
+                    None,
+                )?;
+                continue;
+            }
+
             let done = redraw(
                 &device,
                 state,
@@ -387,6 +434,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 pressed,
                 display_keys,
                 &found,
+                animation_for(&mut loaded, state, &active, &found),
             )?;
             if done {
                 pressed = None;
@@ -400,7 +448,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 device.set_brightness(state.config.brightness.min(100))?;
                 active = state.config.scene_for(app.as_deref()).to_string();
                 page = 0;
-                paint(&device, state, &active, page, display_keys, &found)?;
+                paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                 painted_at = Instant::now();
                 report(app.as_deref(), &active, page, state.pages(&active, display_keys));
             }
@@ -421,7 +469,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                     if dark {
                         dark = false;
                         device.set_brightness(state.config.brightness.min(100))?;
-                        paint(&device, state, &active, page, display_keys, &found)?;
+                        paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                         painted_at = Instant::now();
                     }
 
@@ -432,7 +480,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         // The dim lands in the same instant as the repaint:
                         // brightness steps on this device are seen, not felt.
                         device.set_brightness(rest.brightness())?;
-                        paint(&device, state, &active, page, display_keys, &found)?;
+                        paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                         painted_at = Instant::now();
                         println!("Idle    : resting on {:?}", active);
                         control.publish(json!({ "event": "idle", "resting": true, "scene": active }));
@@ -444,7 +492,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         active = state.config.scene_for(app.as_deref()).to_string();
                         page = 0;
                         device.set_brightness(state.config.brightness.min(100))?;
-                        paint(&device, state, &active, page, display_keys, &found)?;
+                        paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                         painted_at = Instant::now();
                         println!("Idle    : awake on {:?}", active);
                         control.publish(json!({ "event": "idle", "resting": false, "scene": active }));
@@ -462,7 +510,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 } else if target != active {
                     active = target;
                     page = 0;
-                    paint(&device, state, &active, page, display_keys, &found)?;
+                    paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                     painted_at = Instant::now();
                 }
                 report(app.as_deref(), &active, page, state.pages(&active, display_keys));
@@ -510,6 +558,7 @@ fn paint(
     page: usize,
     display_keys: u8,
     found: &device::Found,
+    animation: Option<&pult::animation::Animation>,
 ) -> Result<()> {
     let scene = state
         .config
@@ -517,7 +566,7 @@ fn paint(
         .with_context(|| format!("scene {scene_name:?} vanished from the config"))?;
 
     if let Some(surface) = scene.canvas() {
-        return paint_canvas(device, surface, found, 0.0);
+        return paint_canvas(device, surface, found, 0.0, animation);
     }
 
     let per_page = display_keys as usize;
@@ -547,6 +596,173 @@ fn paint(
 /// The page strip to draw, or nothing when a scene fits on one page.
 fn marker(page: usize, pages: usize) -> Option<(usize, usize)> {
     (pages > 1).then_some((page, pages))
+}
+
+/// Renders a canvas to frames of tiles, for the editor to watch.
+///
+/// Off the dock entirely: nothing here touches the device, so whatever is on
+/// the keys stays on them.
+fn render_preview(
+    surface: Surface,
+    geometry: (u32, u32, u32),
+    frames: Option<usize>,
+    fps: Option<u8>,
+) -> Result<serde_json::Value> {
+    let (cols, rows, key) = geometry;
+
+    // A file of one's own is decoded and played back; otherwise the effect is
+    // drawn, for one loop of its own period.
+    if let Some(source) = surface.source.as_ref() {
+        let mapping = surface.mapping.unwrap_or(canvas::Mapping::Physical);
+        let animation =
+            pult::animation::Animation::load(
+                source,
+                mapping,
+                cols,
+                rows,
+                key,
+                surface.fps,
+                surface.fit,
+                surface.rotate,
+                surface
+                    .background
+                    .as_deref()
+                    .map(pult::render::parse_color)
+                    .transpose()?
+                    .unwrap_or(image::Rgb([8, 9, 12])),
+            )?;
+
+        let wanted = frames.unwrap_or(animation.frames()).clamp(1, 60);
+        let step = animation.duration().as_secs_f32() / wanted as f32;
+        let mut out = Vec::with_capacity(wanted);
+        for index in 0..wanted {
+            let frame = animation.at(index as f32 * step);
+            out.push(
+                frame
+                    .tiles
+                    .iter()
+                    .map(|tile| encode_png(&image::DynamicImage::ImageRgb8(tile.clone())))
+                    .collect::<Result<Vec<_>>>()?,
+            );
+        }
+
+        return Ok(json!({
+            "frames": out,
+            "fps": (wanted as f32 / animation.duration().as_secs_f32().max(0.01)).round(),
+            "seconds": animation.duration().as_secs_f32(),
+            "source": true,
+            "clipped": wanted < animation.frames(),
+        }));
+    }
+
+    let effect = surface.effect.unwrap_or(canvas::Effect::Sweep);
+    let mapping = surface.mapping.unwrap_or_else(|| effect.mapping());
+    let rate = fps.or(surface.fps).unwrap_or_else(|| effect.fps());
+    let period = effect.period();
+    let wanted = frames
+        .unwrap_or_else(|| (period * f32::from(rate)).round() as usize)
+        .clamp(1, 60);
+
+    let tint = surface
+        .color
+        .as_deref()
+        .map(pult::render::parse_color)
+        .transpose()?
+        .unwrap_or(image::Rgb([80, 160, 255]));
+    let background = surface
+        .background
+        .as_deref()
+        .map(pult::render::parse_color)
+        .transpose()?
+        .unwrap_or(image::Rgb([8, 9, 12]));
+
+    let mut canvas = Canvas::new(mapping, cols, rows, key);
+    let step = period / wanted as f32;
+    let mut out = Vec::with_capacity(wanted);
+
+    for index in 0..wanted {
+        canvas::draw(effect, &mut canvas, index as f32 * step, tint, background);
+        out.push(
+            (0..canvas.keys())
+                .map(|tile| encode_png(&image::DynamicImage::ImageRgb8(canvas.tile(tile))))
+                .collect::<Result<Vec<_>>>()?,
+        );
+    }
+
+    Ok(json!({
+        "frames": out,
+        "fps": rate,
+        "seconds": period,
+        "source": false,
+        "clipped": false,
+    }))
+}
+
+/// Returns the animation this scene draws with, decoding it if the scene has
+/// only just started showing it.
+///
+/// Held by scene name so switching back and forth does not decode twice, and
+/// dropped as soon as another scene brings its own.
+fn animation_for<'a>(
+    loaded: &'a mut Option<(String, pult::animation::Animation)>,
+    state: &State,
+    scene_name: &str,
+    found: &device::Found,
+) -> Option<&'a pult::animation::Animation> {
+    let source = state
+        .config
+        .scene(scene_name)
+        .and_then(|scene| scene.canvas())
+        .and_then(|surface| surface.source.clone())?;
+
+    let key = format!("{scene_name}:{}", source.display());
+    if loaded.as_ref().is_none_or(|(held, _)| held != &key) {
+        let surface = state.config.scene(scene_name).and_then(|s| s.canvas());
+        let mapping = surface
+            .and_then(|s| s.mapping)
+            .unwrap_or(canvas::Mapping::Physical);
+        let fps = surface.and_then(|s| s.fps);
+        let (rows, cols) = found.kind.key_layout();
+        let (size, _) = found.kind.key_image_format().size;
+
+        let fit = surface.map(|s| s.fit).unwrap_or_default();
+        let rotate = surface.map(|s| s.rotate).unwrap_or(0);
+        let background = surface
+            .and_then(|s| s.background.as_deref())
+            .and_then(|c| pult::render::parse_color(c).ok())
+            .unwrap_or(image::Rgb([8, 9, 12]));
+
+        match pult::animation::Animation::load(
+            &source,
+            mapping,
+            cols as u32,
+            rows as u32,
+            size as u32,
+            fps,
+            fit,
+            rotate,
+            background,
+        ) {
+            Ok(animation) => {
+                println!(
+                    "Anim    : {} — {} frames, {:.1}s",
+                    source.display(),
+                    animation.frames(),
+                    animation.duration().as_secs_f32()
+                );
+                *loaded = Some((key, animation));
+            }
+            Err(e) => {
+                // A bad file leaves the scene on its effect, or on nothing:
+                // never on a dead dock.
+                eprintln!("animation {} will not load: {e:#}", source.display());
+                *loaded = None;
+                return None;
+            }
+        }
+    }
+
+    loaded.as_ref().map(|(_, animation)| animation)
 }
 
 /// Spreads one still picture across the whole dock.
@@ -596,7 +812,23 @@ fn paint_canvas(
     surface: &Surface,
     found: &device::Found,
     time: f32,
+    animation: Option<&pult::animation::Animation>,
 ) -> Result<()> {
+    // A file of your own takes precedence over a built-in effect: it is the
+    // more specific thing to have asked for.
+    if let Some(animation) = animation {
+        for (index, tile) in animation.at(time).tiles.iter().enumerate() {
+            if index >= found.kind.display_key_count() as usize {
+                break;
+            }
+            device
+                .set_button_image(index as u8, image::DynamicImage::ImageRgb8(tile.clone()))
+                .with_context(|| format!("sending animation tile {index}"))?;
+        }
+        device.flush().context("flushing animation")?;
+        return Ok(());
+    }
+
     let effect = surface.effect.unwrap_or(canvas::Effect::Sweep);
     let mapping = surface.mapping.unwrap_or_else(|| effect.mapping());
     let (rows, cols) = found.kind.key_layout();
@@ -669,13 +901,14 @@ fn redraw(
     pressed: Option<(u8, Instant)>,
     display_keys: u8,
     found: &device::Found,
+    animation: Option<&pult::animation::Animation>,
 ) -> Result<bool> {
     let Some(scene) = state.config.scene(scene_name) else {
         return Ok(true);
     };
 
     if let Some(surface) = scene.canvas() {
-        paint_canvas(device, surface, found, time)?;
+        paint_canvas(device, surface, found, time, animation)?;
         return Ok(pressed.is_some_and(|(_, at)| at.elapsed() >= PRESS_FLASH));
     }
 
@@ -815,6 +1048,7 @@ fn serve(
     app: Option<&str>,
     active: &mut String,
     page: &mut usize,
+    trying: &mut Option<(Surface, Instant)>,
 ) -> Result<bool> {
     let display_keys = found.kind.display_key_count();
     let (request, reply) = call.split();
@@ -966,6 +1200,70 @@ fn serve(
 
             reply.ok(json!({ "icons": sheet }));
             Ok(false)
+        }
+
+        Request::PreviewCanvas {
+            surface,
+            frames,
+            fps,
+        } => {
+            let (rows, cols) = found.kind.key_layout();
+            let (key, _) = found.kind.key_image_format().size;
+            let geometry = (cols as u32, rows as u32, key as u32);
+
+            // Rendering sixty frames costs tens of milliseconds, and this loop
+            // owes the dock a frame every 66. So the reply is handed to a
+            // thread and answered from there.
+            std::thread::spawn(move || match render_preview(*surface, geometry, frames, fps) {
+                Ok(value) => reply.ok(value),
+                Err(e) => reply.fail(format!("{e:#}")),
+            });
+            Ok(false)
+        }
+
+        Request::EffectStrips { frames } => {
+            let (rows, cols) = found.kind.key_layout();
+            let (key, _) = found.kind.key_image_format().size;
+            let geometry = (cols as u32, rows as u32, key as u32);
+            let wanted = frames.unwrap_or(10).clamp(2, 30);
+
+            std::thread::spawn(move || {
+                let mut strips = serde_json::Map::new();
+                for effect in canvas::Effect::all() {
+                    let surface = pult::config::Surface {
+                        kind: pult::config::SurfaceKind::Canvas,
+                        effect: Some(effect),
+                        source: None,
+                        fit: Default::default(),
+                        rotate: 0,
+                        mapping: None,
+                        fps: None,
+                        color: None,
+                        background: None,
+                    };
+                    match render_preview(surface, geometry, Some(wanted), None) {
+                        Ok(value) => {
+                            strips.insert(effect.name().to_string(), value);
+                        }
+                        Err(_) => continue,
+                    }
+                }
+                reply.ok(json!({ "strips": strips }));
+            });
+            Ok(false)
+        }
+
+        Request::TryCanvas { surface, seconds } => {
+            let window = Duration::from_secs_f32(seconds.unwrap_or(20.0).clamp(1.0, 120.0));
+            *trying = Some((*surface, Instant::now() + window));
+            reply.ok(json!({ "trying": true, "seconds": window.as_secs_f32() }));
+            Ok(false)
+        }
+
+        Request::TryStop => {
+            let was = trying.take().is_some();
+            reply.ok(json!({ "stopped": was }));
+            Ok(was)
         }
 
         Request::Preview { scene, page: want } => {

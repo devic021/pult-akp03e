@@ -153,6 +153,42 @@ impl Effect {
             _ => 15,
         }
     }
+
+    /// How long until the motion repeats, in seconds.
+    ///
+    /// Used to decide how many frames a preview needs. Two of these do not
+    /// truly repeat, so they report a length that looks like a loop instead of
+    /// pretending to be one.
+    pub fn period(self) -> f32 {
+        match self {
+            Effect::Sweep => 2.6,
+            Effect::Wave => 1.0 / 1.7,
+            Effect::Pulse => 2.2,
+            Effect::Rain => 4.0,
+            Effect::Aurora => 8.0,
+        }
+    }
+
+    /// Every effect, in the order a gallery should show them.
+    pub fn all() -> [Effect; 5] {
+        [
+            Effect::Sweep,
+            Effect::Wave,
+            Effect::Pulse,
+            Effect::Rain,
+            Effect::Aurora,
+        ]
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Effect::Sweep => "sweep",
+            Effect::Wave => "wave",
+            Effect::Pulse => "pulse",
+            Effect::Rain => "rain",
+            Effect::Aurora => "aurora",
+        }
+    }
 }
 
 /// Draws one frame. `time` is seconds since the scene was painted.

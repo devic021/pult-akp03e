@@ -67,6 +67,29 @@ pub enum Request {
         size: Option<u32>,
         color: Option<String>,
     },
+    /// Frames of a canvas, rendered from values the editor has not saved yet,
+    /// so the motion can be watched while the dock shows something else.
+    PreviewCanvas {
+        surface: Box<crate::config::Surface>,
+        /// How many frames; by default one loop of the effect's own period.
+        frames: Option<usize>,
+        fps: Option<u8>,
+    },
+    /// One short strip per built-in effect, for choosing by looking.
+    EffectStrips {
+        frames: Option<usize>,
+    },
+    /// Put a surface on the real dock for a moment, without saving it.
+    ///
+    /// The only way to judge how the seams cut a motion is to watch them do
+    /// it. The trial expires on its own, so a crashed editor cannot leave the
+    /// dock stuck on something that was never saved.
+    TryCanvas {
+        surface: Box<crate::config::Surface>,
+        seconds: Option<f32>,
+    },
+    /// End a trial early and give the dock back.
+    TryStop,
     /// A scene's page, rendered exactly as the dock would show it.
     Preview {
         scene: String,

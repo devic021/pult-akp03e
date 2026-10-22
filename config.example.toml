@@ -591,3 +591,16 @@ swallow_first_press = true
 # PNG or JPEG, spread across all six keys. Remove the line and the dock simply
 # keeps whatever it was showing.
 sleep_image = "~/.config/pult/sleep.png"
+
+[scenes.moja]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.moja.surface]
+kind = "canvas"
+source = "~/.config/pult/proba.gif"
+mapping = "packed"
+
+[scenes.uspravno]
+buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+[scenes.uspravno.surface]
+kind = "canvas"
+source = "~/.config/pult/uspravno.gif"

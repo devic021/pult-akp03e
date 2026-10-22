@@ -4,6 +4,7 @@
 //! so every scene lives here and is pushed over HID.
 
 pub mod action;
+pub mod animation;
 pub mod canvas;
 pub mod config;
 pub mod control;
