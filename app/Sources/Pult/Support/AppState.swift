@@ -152,7 +152,45 @@ final class AppState: ObservableObject {
 
     // MARK: - Device
 
-    func setBrightness(_ value: Int) {
+    /// Brightness, coalesced.
+    ///
+    /// A slider emits dozens of values a second. Sending each one opens a
+    /// connection and waits for an answer, which piles up behind the drag and
+    /// makes the dock lag the finger. Only the newest value is sent, at most
+    /// every `brightnessInterval`, and the last one always goes out.
+    private var brightnessPending: Int?
+    private var brightnessSentAt = Date.distantPast
+    private var brightnessTimer: Timer?
+    private static let brightnessInterval: TimeInterval = 0.05
+
+    func setBrightness(_ value: Int, final: Bool = false) {
+        brightnessPending = value
+
+        if final {
+            flushBrightness()
+            return
+        }
+
+        let elapsed = Date().timeIntervalSince(brightnessSentAt)
+        if elapsed >= Self.brightnessInterval {
+            flushBrightness()
+        } else if brightnessTimer == nil {
+            // Trailing edge: whatever the last value was still has to arrive.
+            brightnessTimer = Timer.scheduledTimer(
+                withTimeInterval: Self.brightnessInterval - elapsed,
+                repeats: false
+            ) { [weak self] _ in
+                Task { @MainActor in self?.flushBrightness() }
+            }
+        }
+    }
+
+    private func flushBrightness() {
+        brightnessTimer?.invalidate()
+        brightnessTimer = nil
+        guard let value = brightnessPending else { return }
+        brightnessPending = nil
+        brightnessSentAt = Date()
         fireAndForget(["cmd": "brightness", "value": value])
     }
 

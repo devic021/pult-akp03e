@@ -93,16 +93,29 @@ private struct Sidebar: View {
         )) {
             Section {
                 ForEach(Panel.allCases) { item in
-                    HStack(spacing: 8) {
-                        Image(systemName: item.symbol)
-                            .frame(width: 18)
-                            .foregroundStyle(panel == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                        Text(item.label)
-                            .fontWeight(panel == item ? .semibold : .regular)
-                        Spacer()
+                    // A plain tap gesture inside a List loses the first click
+                    // to the list's own selection; a button does not.
+                    Button {
+                        panel = item
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: item.symbol)
+                                .frame(width: 18)
+                                .foregroundStyle(
+                                    panel == item ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary)
+                                )
+                            Text(item.label)
+                                .fontWeight(panel == item ? .semibold : .regular)
+                            Spacer()
+                        }
+                        .contentShape(.rect)
                     }
-                    .contentShape(.rect)
-                    .onTapGesture { panel = item }
+                    .buttonStyle(.plain)
+                    .listRowBackground(
+                        panel == item
+                            ? AnyView(RoundedRectangle(cornerRadius: 6).fill(.selection))
+                            : AnyView(Color.clear)
+                    )
                 }
             }
 

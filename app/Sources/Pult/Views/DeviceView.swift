@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 struct DeviceView: View {
     @EnvironmentObject private var state: AppState
     @State private var logoMessage: String?
+    @State private var brightness: Double = 70
 
     var body: some View {
         ScrollView {
@@ -28,20 +29,21 @@ struct DeviceView: View {
                 GlassCard(T("device.brightness"), systemImage: "sun.max") {
                     HStack {
                         Image(systemName: "sun.min")
-                        Slider(
-                            value: Binding(
-                                get: { Double(state.config.brightness) },
-                                set: { value in
-                                    state.config.brightness = Int(value)
-                                    // Applied immediately so the slider is felt,
-                                    // saved only when the config is saved.
-                                    state.setBrightness(Int(value))
-                                }
-                            ),
-                            in: 0...100
-                        )
+                        // The slider is driven by local state, not by the
+                        // configuration: binding a control to a published value
+                        // that the same view rebuilds from makes it fight the
+                        // drag.
+                        Slider(value: $brightness, in: 0...100) { editing in
+                            if !editing {
+                                state.config.brightness = Int(brightness.rounded())
+                                state.setBrightness(Int(brightness.rounded()), final: true)
+                            }
+                        }
+                        .onChange(of: brightness) { _, value in
+                            state.setBrightness(Int(value.rounded()))
+                        }
                         Image(systemName: "sun.max")
-                        Text("\(state.config.brightness)%")
+                        Text("\(Int(brightness.rounded()))%")
                             .monospacedDigit()
                             .frame(width: 46, alignment: .trailing)
                     }
@@ -73,6 +75,7 @@ struct DeviceView: View {
             .padding(24)
             .frame(maxWidth: 680, alignment: .leading)
         }
+        .task { brightness = Double(state.config.brightness) }
     }
 
     private func chooseLogo() {

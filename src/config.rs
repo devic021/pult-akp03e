@@ -116,6 +116,9 @@ pub struct Encoder {
 /// What a key does. At most one field may be set.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Action {
+    /// Application to bring up, by bundle ID or by name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<String>,
     /// Shell command, run detached.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub run: Option<String>,
@@ -148,7 +151,8 @@ impl Action {
     }
 
     fn count(&self) -> usize {
-        usize::from(self.run.is_some())
+        usize::from(self.app.is_some())
+            + usize::from(self.run.is_some())
             + usize::from(self.shortcut.is_some())
             + usize::from(self.scene.is_some())
             + usize::from(self.volume.is_some())

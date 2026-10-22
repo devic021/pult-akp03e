@@ -103,6 +103,8 @@ final class L10n: ObservableObject {
 
         "action.title": "Action",
         "action.none": "Nothing",
+        "action.app": "Open application",
+        "action.app.choose": "Choose application…",
         "action.run": "Run command",
         "action.shortcut": "Keystroke",
         "action.volume": "Volume",
@@ -208,6 +210,8 @@ final class L10n: ObservableObject {
 
         "action.title": "Akcija",
         "action.none": "Ništa",
+        "action.app": "Pokreni aplikaciju",
+        "action.app.choose": "Izaberi aplikaciju…",
         "action.run": "Pokreni komandu",
         "action.shortcut": "Prečica",
         "action.volume": "Jačina zvuka",

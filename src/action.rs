@@ -33,7 +33,9 @@ impl Turn {
 
 /// One-line description of a binding, for the log.
 pub fn describe(action: &Action) -> String {
-    if let Some(command) = &action.run {
+    if let Some(app) = &action.app {
+        format!("open {app:?}")
+    } else if let Some(command) = &action.run {
         format!("run {command:?}")
     } else if let Some(shortcut) = &action.shortcut {
         format!("shortcut {shortcut:?}")
@@ -54,6 +56,11 @@ pub fn check_shortcut(shortcut: &str) -> Result<()> {
 }
 
 pub fn run(action: &Action) -> Result<Outcome> {
+    if let Some(app) = &action.app {
+        open_app(app)?;
+        return Ok(Outcome::Nothing);
+    }
+
     if let Some(command) = &action.run {
         // Detached: a key press must not block the event loop, and we do not
         // want the dock's output mixed into ours.
@@ -87,6 +94,28 @@ pub fn run(action: &Action) -> Result<Outcome> {
     }
 
     Ok(Outcome::Nothing)
+}
+
+/// Brings an application up, by bundle ID or by name.
+///
+/// `open` is used rather than launching the executable directly: it activates
+/// an application that is already running instead of starting a second copy,
+/// which is what pressing a key on a dock should do.
+fn open_app(app: &str) -> Result<()> {
+    // A bundle ID has dots and no slashes; anything else is a name or a path.
+    let by_id = app.contains('.') && !app.contains('/');
+    let selector = if by_id { "-b" } else { "-a" };
+
+    Command::new("/usr/bin/open")
+        .arg(selector)
+        .arg(app)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .with_context(|| format!("opening {app:?}"))?;
+
+    Ok(())
 }
 
 /// Sends a keystroke through System Events.

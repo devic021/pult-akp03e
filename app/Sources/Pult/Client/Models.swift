@@ -9,6 +9,7 @@ import Foundation
 /// type below therefore decodes by hand, treating absence as the default.
 
 struct Action: Codable, Equatable, Hashable {
+    var app: String?
     var run: String?
     var shortcut: String?
     var scene: String?
@@ -16,11 +17,13 @@ struct Action: Codable, Equatable, Hashable {
     var page: PageTurn?
 
     var isEmpty: Bool {
-        run == nil && shortcut == nil && scene == nil && volume == nil && page == nil
+        app == nil && run == nil && shortcut == nil
+            && scene == nil && volume == nil && page == nil
     }
 
     /// Which of the mutually exclusive actions this is.
     var kind: Kind {
+        if app != nil { return .app }
         if run != nil { return .run }
         if shortcut != nil { return .shortcut }
         if volume != nil { return .volume }
@@ -30,7 +33,7 @@ struct Action: Codable, Equatable, Hashable {
     }
 
     enum Kind: String, CaseIterable, Identifiable {
-        case none, run, shortcut, volume, scene, page
+        case none, app, run, shortcut, volume, scene, page
         var id: String { rawValue }
         var label: String { T("action.\(rawValue)") }
     }
@@ -38,9 +41,10 @@ struct Action: Codable, Equatable, Hashable {
     /// Switches to another kind of action, dropping the old one: a key can
     /// only carry one, and a leftover field would be written to the file.
     mutating func become(_ kind: Kind) {
-        run = nil; shortcut = nil; scene = nil; volume = nil; page = nil
+        app = nil; run = nil; shortcut = nil; scene = nil; volume = nil; page = nil
         switch kind {
         case .none: break
+        case .app: app = ""
         case .run: run = ""
         case .shortcut: shortcut = ""
         case .volume: volume = 5
@@ -65,6 +69,7 @@ enum KeyAnimation: String, Codable, CaseIterable, Identifiable {
 struct Key: Codable, Equatable, Hashable, Identifiable {
     var id = UUID()
 
+    var app: String?
     var label: String = ""
     var color: String?
     var text_color: String?
@@ -81,7 +86,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
 
     enum CodingKeys: String, CodingKey {
         case label, color, text_color, icon, icon_color, animate
-        case run, shortcut, scene, volume, page
+        case app, run, shortcut, scene, volume, page
     }
 
     init(
@@ -108,6 +113,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
         icon_color = try values.decodeIfPresent(String.self, forKey: .icon_color)
         animate = try values.decodeIfPresent(KeyAnimation.self, forKey: .animate)
+        app = try values.decodeIfPresent(String.self, forKey: .app)
         run = try values.decodeIfPresent(String.self, forKey: .run)
         shortcut = try values.decodeIfPresent(String.self, forKey: .shortcut)
         scene = try values.decodeIfPresent(String.self, forKey: .scene)
@@ -116,8 +122,14 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     }
 
     var action: Action {
-        get { Action(run: run, shortcut: shortcut, scene: scene, volume: volume, page: page) }
+        get {
+            Action(
+                app: app, run: run, shortcut: shortcut,
+                scene: scene, volume: volume, page: page
+            )
+        }
         set {
+            app = newValue.app
             run = newValue.run
             shortcut = newValue.shortcut
             scene = newValue.scene

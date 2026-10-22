@@ -22,8 +22,12 @@ use pult::permissions;
 use pult::render::{Frame, Renderer};
 use serde_json::json;
 
-/// How long to block on device input before checking the frontmost app again.
-const READ_TIMEOUT: Duration = Duration::from_millis(100);
+/// How long to block on device input before looking at anything else.
+///
+/// This also bounds how long a request from the app waits before the loop
+/// notices it, so it is short enough that dragging a slider feels direct. The
+/// thread is asleep in the kernel for all of it.
+const READ_TIMEOUT: Duration = Duration::from_millis(40);
 /// Redraw rate while something on screen is moving. The dock accepts a full
 /// six-key repaint in about 5 ms, so this is a comfortable fraction of what it
 /// can take.
@@ -215,7 +219,17 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
         "serial": found.serial,
     }));
 
+    // Opt-in timing, because guessing where a loop spends its time is how you
+    // end up optimising the wrong thing.
+    let trace = std::env::var_os("PULT_TRACE").is_some();
+    let mut trace_since = Instant::now();
+    let mut trace_iterations = 0u32;
+    let mut trace_read = Duration::ZERO;
+    let mut trace_rest = Duration::ZERO;
+
     loop {
+        let iteration_started = Instant::now();
+
         while let Some(call) = control.next_call() {
             match serve(
                 call,
@@ -242,7 +256,11 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 .is_some_and(|scene| scene.is_animated(page, display_keys as usize));
         let timeout = if moving { FRAME_TIMEOUT } else { READ_TIMEOUT };
 
-        match reader.read(Some(timeout)) {
+        let read_started = Instant::now();
+        let input = reader.read(Some(timeout));
+        let read_took = read_started.elapsed();
+
+        match input {
             Ok(events) => {
                 for event in events {
                     if let Event::ButtonDown(key) = event {
@@ -340,6 +358,26 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
         if last_keep_alive.elapsed() >= KEEP_ALIVE_EVERY {
             last_keep_alive = Instant::now();
             device.keep_alive().context("sending keep-alive")?;
+        }
+
+        if trace {
+            trace_iterations += 1;
+            trace_read += read_took;
+            trace_rest += iteration_started.elapsed() - read_took;
+
+            if trace_since.elapsed() >= Duration::from_secs(2) {
+                let n = trace_iterations.max(1);
+                println!(
+                    "trace   : {n} loops in {:?}, read {:?} each, rest {:?} each",
+                    trace_since.elapsed(),
+                    trace_read / n,
+                    trace_rest / n
+                );
+                trace_since = Instant::now();
+                trace_iterations = 0;
+                trace_read = Duration::ZERO;
+                trace_rest = Duration::ZERO;
+            }
         }
     }
 }
