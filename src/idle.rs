@@ -11,11 +11,20 @@
 
 use std::time::Duration;
 
+use core_foundation::base::{CFTypeRef, TCFType};
+use core_foundation::boolean::CFBoolean;
+use core_foundation::string::{CFString, CFStringRef};
+
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGEventSourceSecondsSinceLastEventType(state: i32, event: u32) -> f64;
     fn CGMainDisplayID() -> u32;
     fn CGDisplayIsAsleep(display: u32) -> i32;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+extern "C" {
+    fn CFPreferencesCopyAppValue(key: CFStringRef, application: CFStringRef) -> CFTypeRef;
 }
 
 /// `kCGEventSourceStateHIDSystemState`: the real hardware, not a synthesised
@@ -36,6 +45,27 @@ pub fn since_input() -> Duration {
 /// for an empty room, is the thing an idle screen is supposed to avoid.
 pub fn display_asleep() -> bool {
     unsafe { CGDisplayIsAsleep(CGMainDisplayID()) != 0 }
+}
+
+/// Whether this Mac has been asked for less motion.
+///
+/// System Settings > Accessibility > Display > Reduce motion. Read as a
+/// preference rather than through AppKit because the daemon has no run loop of
+/// its own to deliver the notification to, and it only needs to be right at the
+/// moment a config is loaded.
+///
+/// An absent key means off, which is the honest reading: nobody has an opinion
+/// until they set one.
+pub fn reduce_motion() -> bool {
+    let key = CFString::new("reduceMotion");
+    let domain = CFString::new("com.apple.universalaccess");
+    unsafe {
+        let value = CFPreferencesCopyAppValue(key.as_concrete_TypeRef(), domain.as_concrete_TypeRef());
+        if value.is_null() {
+            return false;
+        }
+        CFBoolean::wrap_under_create_rule(value.cast()) == CFBoolean::true_value()
+    }
 }
 
 /// Parses `30s`, `5m`, `1h`, or a bare number of seconds.

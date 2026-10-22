@@ -53,9 +53,32 @@ pub enum Fit {
     Stretch,
 }
 
-/// A source taller than this much of its width is portrait enough that
-/// covering it would be vandalism, and the daemon says so.
-const PORTRAIT: f32 = 1.15;
+/// How much of the cropped axis a `cover` must leave before it stops being a
+/// crop and starts being vandalism.
+///
+/// Measured, not chosen: at 212x136 a square source covered keeps 64% of its
+/// height, and that still reads — an emoji or a logo carries a wide empty
+/// margin and cover eats the margin. A phone video keeps 36% and reads as a
+/// mistake. Sixty per cent sits between them.
+const KEEP: f32 = 0.60;
+
+/// What `cover` would leave of a source, and the fit that fraction argues for.
+///
+/// `aspect` is the source's width over its height *after* any rotation,
+/// `target` the canvas's. The threshold is symmetric on purpose: a banner four
+/// times wider than it is tall loses as much of itself to a cover as a phone
+/// video does, and the rule this replaces was one constant checked only
+/// against portrait sources — so a source at 0.90 was cropped to 58% of its
+/// height without a word being said about it.
+pub fn suggest(aspect: f32, target: f32) -> (Fit, f32) {
+    let kept = if aspect >= target {
+        target / aspect
+    } else {
+        aspect / target
+    };
+    let fit = if kept >= KEEP { Fit::Cover } else { Fit::Contain };
+    (fit, kept)
+}
 
 /// Beyond this an animation is a video, and the memory it would take is not
 /// worth a key pad. At 212x136 a frame is about 86 KB of tiles, so this caps
@@ -139,21 +162,31 @@ impl Animation {
         let mut frames = Vec::with_capacity(pictures.len());
         let mut total = Duration::ZERO;
 
-        // Said once, not once per frame: a portrait animation covered onto a
-        // landscape dock loses most of itself, and silently is the wrong way
-        // to do that.
+        // Said once, not once per frame: an animation of the wrong shape
+        // covered onto a landscape dock loses most of itself, and silently is
+        // the wrong way to do that.
         if let Some((first, _)) = pictures.first() {
-            let tall = first.height() as f32 / first.width().max(1) as f32;
-            if fit == Fit::Cover && tall > PORTRAIT {
+            // After the rotation, because a clip filmed sideways is landscape
+            // by the time it reaches the canvas.
+            let (w, h) = if rotate % 180 == 90 {
+                (first.height(), first.width())
+            } else {
+                (first.width(), first.height())
+            };
+            let aspect = w as f32 / h.max(1) as f32;
+            let target = canvas.width() as f32 / canvas.height() as f32;
+            let (wanted, kept) = suggest(aspect, target);
+            if fit == Fit::Cover && wanted == Fit::Contain {
+                let axis = if aspect >= target { "width" } else { "height" };
                 eprintln!(
-                    "{} is {}x{}: covering it on a {}x{} dock keeps about {:.0}% of its height. \
+                    "{} is {}x{}: covering it on a {}x{} dock keeps about {:.0}% of its {axis}. \
                      Try fit = \"contain\", or rotate = 90 if it was filmed sideways.",
                     path.display(),
                     first.width(),
                     first.height(),
                     canvas.width(),
                     canvas.height(),
-                    100.0 * (canvas.height() as f32 / canvas.width() as f32) / tall
+                    100.0 * kept,
                 );
             }
         }
@@ -327,6 +360,34 @@ fn collect(frames: image::Frames<'_>) -> Result<Vec<(DynamicImage, Option<Durati
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The numbers in the fitting rule, written down where a change to the
+    /// constant has to argue with them.
+    #[test]
+    fn the_fit_follows_what_a_crop_would_cost() {
+        let dock = 212.0 / 136.0;
+
+        // 16:9 and the GOES satellite loops: a cover barely touches them.
+        assert_eq!(suggest(1920.0 / 1080.0, dock).0, Fit::Cover);
+        assert_eq!(suggest(625.0 / 375.0, dock).0, Fit::Cover);
+
+        // A square keeps 64% of its height, and an emoji's margin is what goes.
+        let (fit, kept) = suggest(1.0, dock);
+        assert_eq!(fit, Fit::Cover);
+        assert!((kept - 0.642).abs() < 0.01, "a square keeps {kept}");
+
+        // A phone video keeps 36%, which is a different video.
+        let (fit, kept) = suggest(1080.0 / 1920.0, dock);
+        assert_eq!(fit, Fit::Contain);
+        assert!((kept - 0.361).abs() < 0.01, "a phone video keeps {kept}");
+
+        // Symmetric: a wide banner is refused a cover for the same reason.
+        assert_eq!(suggest(1134.0 / 280.0, dock).0, Fit::Contain);
+
+        // The old constant said 1.15 (an aspect of 0.870) and let this one
+        // through silently at 58% of its height.
+        assert_eq!(suggest(0.90, dock).0, Fit::Contain);
+    }
     use image::{Rgba, RgbaImage};
 
     /// Writes a three-frame animated GIF to a temporary path.

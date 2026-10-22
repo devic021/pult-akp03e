@@ -15,9 +15,15 @@
 //!
 //! Static text and photographs belong on neither: a letter cut by 15 px of
 //! plastic is a letter gone.
+//!
+//! Every effect below is a pure function of `(tau, style)`. `tau` is a phase
+//! accumulator the daemon advances by `dt * speed`, which is why no formula
+//! here ever reads a speed: turning the knob changes how fast tau grows, never
+//! where the picture currently is, so the dock never jumps when you drag it.
 
 use image::{Rgb, RgbImage};
 use serde::{Deserialize, Serialize};
+use std::f32::consts::TAU;
 
 /// The seam between two keys, as a fraction of a key. Taken from the device's
 /// own proportions; it is the one number the whole canvas depends on.
@@ -118,20 +124,235 @@ impl Canvas {
     }
 }
 
+/// Which way the motion goes. The four axial directions are the ones the
+/// travelling effects understand; `cw`/`ccw` spin and `out`/`in` radiate, and
+/// an effect that has no use for a rotation falls back to its own axis rather
+/// than refusing the setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Dir {
+    Right,
+    Left,
+    Up,
+    Down,
+    Cw,
+    Ccw,
+    Out,
+    In,
+}
+
+/// What happens at the end of a loop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Cycle {
+    /// Start again from the far side.
+    #[default]
+    Wrap,
+    /// Turn round and come back.
+    Bounce,
+}
+
+/// The envelope `breathe` rides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Shape {
+    #[default]
+    Sine,
+    Ease,
+    Heartbeat,
+}
+
+/// Everything an effect is allowed to know, resolved once per frame.
+///
+/// One field per TOML key, named identically, so a name means the same thing in
+/// the config file, in this struct and on the row in the editor. Defaults are
+/// applied before this is built — see `Surface::style` — so nothing in here is
+/// ever an `Option` and no effect contains an `unwrap_or`.
+#[derive(Debug, Clone, Copy)]
+pub struct Style {
+    // --- colour, already resolved (color_cycle applied, color2 derived)
+    /// The hot colour.
+    pub c: Rgb<u8>,
+    /// The second stop.
+    pub k: Rgb<u8>,
+    pub background: Rgb<u8>,
+
+    // --- shared
+    /// 0..1 master fade; the idle ramp's hook.
+    pub opacity: f32,
+    /// 0..1 feather width as a fraction of a feature.
+    pub softness: f32,
+    /// 0.25..4 multiplies every length, divides every spatial frequency.
+    pub scale: f32,
+    /// 0.1..3 multiplies every count.
+    pub density: f32,
+    pub dir: Dir,
+    pub cycle: Cycle,
+    /// 0..1 fractions of the canvas; `pulse` and `warp` only.
+    pub origin: (f32, f32),
+    pub seed: u32,
+    /// False lets a member be drawn over another, which the idle cross-fade
+    /// needs: two effects painted into one canvas, not two canvases mixed.
+    pub clear: bool,
+
+    // --- per effect, defaults already applied
+    /// `sweep`: tilts the bar into a diagonal wipe.
+    pub shear: f32,
+    /// `wave`: how much of the tank below the crest is filled.
+    pub fill: f32,
+    /// `aurora`: 0 a smooth field, 3-5 posterised steps.
+    pub bands: u8,
+    /// `rain`: sideways drift per step along the streak.
+    pub wind: f32,
+    /// `orbit`: how many times the path goes round in each axis.
+    pub lobes: (u8, u8),
+    /// `orbit`, `warp`: seconds of the past still drawn.
+    pub trail: f32,
+    /// `warp`: 1 a drift, 2.4 perspective, 4 a violent jump.
+    pub exponent: f32,
+    /// `lava`: low merges everything, high separates islands.
+    pub threshold: f32,
+    /// `ember`: how far up the span the flame reaches.
+    pub height: f32,
+    /// `ember`: dissolve the tip into the background.
+    pub smoke: f32,
+    /// `breathe`: which envelope.
+    pub shape: Shape,
+    /// `breathe`: the level at the bottom of a breath.
+    pub floor: f32,
+}
+
+impl Style {
+    /// Blends with `opacity` folded in. Every effect writes through this, so
+    /// the master fade and the clamp exist in exactly one place.
+    fn put(&self, canvas: &mut Canvas, x: f32, y: f32, colour: Rgb<u8>, alpha: f32) {
+        let alpha = alpha * self.opacity;
+        if alpha <= 0.002 {
+            return;
+        }
+        canvas.blend(x.round() as i32, y.round() as i32, colour, alpha);
+    }
+
+    /// `lerp(c, k, u)`. Every member has exactly one axis worth colouring, and
+    /// this is it: 0 is the cool end, 1 the hot core.
+    fn tint(&self, u: f32) -> Rgb<u8> {
+        mix(self.c, self.k, u.clamp(0.0, 1.0))
+    }
+
+    /// The one edge rule. `u` is how far inside the feature a pixel is: 1 at
+    /// the core, 0 at the boundary. A `softness` of 0.02 is a hard cut, 1.0 a
+    /// fade across the whole half-width. This replaces the dozen different
+    /// falloff, edge, sharpness and tail-curve knobs the effects used to want.
+    fn feather(&self, u: f32) -> f32 {
+        if u <= 0.0 {
+            return 0.0;
+        }
+        smoothstep(0.0, 1.0, (u / self.softness.max(0.02)).min(1.0))
+    }
+}
+
+/// Phase. `wrap` runs 0..1 and starts over; `bounce` runs up and back down.
+fn phi(tau: f32, period: f32, cycle: Cycle) -> f32 {
+    let period = period.max(0.001);
+    match cycle {
+        Cycle::Wrap => (tau / period).rem_euclid(1.0),
+        Cycle::Bounce => 1.0 - (2.0 * (tau / (2.0 * period)).rem_euclid(1.0) - 1.0).abs(),
+    }
+}
+
+/// The only randomness in the catalogue: a pure function of `(i, salt, seed)`,
+/// so the arrangement is reproducible and a repaint resumes where the eye left
+/// off instead of reshuffling itself.
+fn h(i: u32, salt: u32, seed: u32) -> f32 {
+    let mut x = i
+        .wrapping_mul(0x9E37_79B9)
+        ^ salt.wrapping_mul(0x85EB_CA6B)
+        ^ seed.wrapping_mul(0xC2B2_AE35);
+    x ^= x >> 16;
+    x = x.wrapping_mul(0x7FEB_352D);
+    x ^= x >> 15;
+    x = x.wrapping_mul(0x846C_A68B);
+    x ^= x >> 16;
+    (x >> 8) as f32 / 16_777_216.0
+}
+
+/// Resolves `dir` once into `(p, q, span, cross)` so an axial effect never
+/// reads x and y and never contains a `match` on the direction. `p` runs along
+/// the travel, `q` across it.
+fn axis(dir: Dir, x: f32, y: f32, width: f32, height: f32) -> (f32, f32, f32, f32) {
+    match dir {
+        Dir::Right | Dir::Out => (x, y, width, height),
+        Dir::Left | Dir::In => (width - 1.0 - x, y, width, height),
+        Dir::Down | Dir::Cw => (y, x, height, width),
+        Dir::Up | Dir::Ccw => (height - 1.0 - y, x, height, width),
+    }
+}
+
+/// The inverse, for effects that build a feature in `(p, q)` and then place it.
+fn unaxis(dir: Dir, p: f32, q: f32, width: f32, height: f32) -> (f32, f32) {
+    match dir {
+        Dir::Right | Dir::Out => (p, q),
+        Dir::Left | Dir::In => (width - 1.0 - p, q),
+        Dir::Down | Dir::Cw => (q, p),
+        Dir::Up | Dir::Ccw => (q, height - 1.0 - p),
+    }
+}
+
+/// The span and cross extent for a direction, without a pixel.
+fn extent(dir: Dir, width: f32, height: f32) -> (f32, f32) {
+    let (_, _, span, cross) = axis(dir, 0.0, 0.0, width, height);
+    (span, cross)
+}
+
+/// Burn-in and seam fairness, not a matter of taste, so not a knob: the whole
+/// field drifts four pixels on two periods that share no common multiple. A
+/// blob parked behind plastic is back on glass inside a minute.
+fn wander(tau: f32) -> (f32, f32) {
+    const AMPLITUDE: f32 = 4.0;
+    (
+        (tau * TAU / 61.0).sin() * AMPLITUDE,
+        (tau * TAU / 47.0).cos() * AMPLITUDE,
+    )
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+pub(crate) fn mix(a: Rgb<u8>, b: Rgb<u8>, u: f32) -> Rgb<u8> {
+    let u = u.clamp(0.0, 1.0);
+    Rgb([
+        (f32::from(a[0]) + (f32::from(b[0]) - f32::from(a[0])) * u).round() as u8,
+        (f32::from(a[1]) + (f32::from(b[1]) - f32::from(a[1])) * u).round() as u8,
+        (f32::from(a[2]) + (f32::from(b[2]) - f32::from(a[2])) * u).round() as u8,
+    ])
+}
+
 /// What the canvas does over time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Effect {
     /// A bright band crossing the dock.
     Sweep,
-    /// A travelling sine, drawn as a lit crest.
+    /// A travelling sine, drawn as a lit crest over an optional tank.
     Wave,
-    /// A ring expanding from the middle.
+    /// Rings expanding from a point.
     Pulse,
     /// Falling streaks.
     Rain,
     /// Slow drifting colour, with nothing to track.
     Aurora,
+    /// One bright head running a closed loop, dragging a tail.
+    Orbit,
+    /// Points streaking outward and lengthening as they go.
+    Warp,
+    /// Big soft blobs that drift, neck together and merge.
+    Lava,
+    /// Fire licking up from one edge, tearing into tongues.
+    Ember,
+    /// The whole dock swelling and fading as one lamp.
+    Breathe,
 }
 
 impl Effect {
@@ -140,24 +361,31 @@ impl Effect {
         match self {
             // A front that stalls at every bezel reads as a stutter, so these
             // are drawn as though the keys were butted together.
-            Effect::Sweep | Effect::Wave | Effect::Rain => Mapping::Packed,
+            Effect::Sweep | Effect::Wave | Effect::Rain | Effect::Ember => Mapping::Packed,
             // These have a shape, and a shape must survive the gaps.
-            Effect::Pulse | Effect::Aurora => Mapping::Physical,
+            Effect::Pulse
+            | Effect::Aurora
+            | Effect::Orbit
+            | Effect::Warp
+            | Effect::Lava
+            | Effect::Breathe => Mapping::Physical,
         }
     }
 
-    /// Frames per second this effect wants.
+    /// Frames per second this effect wants. Nothing here is compute-bound; the
+    /// cost of a higher number is time on the wire, not a busy core.
     pub fn fps(self) -> u8 {
         match self {
-            Effect::Aurora => 8,
+            Effect::Aurora | Effect::Breathe => 8,
+            Effect::Lava => 10,
             _ => 15,
         }
     }
 
-    /// How long until the motion repeats, in seconds.
+    /// How long until the motion repeats, in tau-seconds.
     ///
-    /// Used to decide how many frames a preview needs. Two of these do not
-    /// truly repeat, so they report a length that looks like a loop instead of
+    /// Used to decide how many frames a preview needs. Lava and ember never
+    /// truly repeat, so they report a length that reads as a loop instead of
     /// pretending to be one.
     pub fn period(self) -> f32 {
         match self {
@@ -166,20 +394,46 @@ impl Effect {
             Effect::Pulse => 2.2,
             Effect::Rain => 4.0,
             Effect::Aurora => 8.0,
+            Effect::Orbit => 2.4,
+            Effect::Warp => 3.2,
+            Effect::Lava => 24.0,
+            Effect::Ember => 6.0,
+            Effect::Breathe => 5.0,
         }
     }
 
     /// Every effect, in the order a gallery should show them.
-    pub fn all() -> [Effect; 5] {
+    pub fn all() -> [Effect; 10] {
         [
             Effect::Sweep,
             Effect::Wave,
             Effect::Pulse,
             Effect::Rain,
             Effect::Aurora,
+            Effect::Orbit,
+            Effect::Warp,
+            Effect::Lava,
+            Effect::Ember,
+            Effect::Breathe,
         ]
     }
 
+    /// The axis this effect was designed around, used when `direction` is
+    /// unset. Saying "the effect's own" out loud in one place beats five
+    /// scattered `unwrap_or`s that drift apart.
+    pub fn dir(self) -> Dir {
+        match self {
+            Effect::Sweep | Effect::Wave | Effect::Aurora | Effect::Lava | Effect::Breathe => {
+                Dir::Right
+            }
+            Effect::Rain => Dir::Down,
+            Effect::Ember => Dir::Up,
+            Effect::Orbit => Dir::Cw,
+            Effect::Pulse | Effect::Warp => Dir::Out,
+        }
+    }
+
+    /// The config spelling.
     pub fn name(self) -> &'static str {
         match self {
             Effect::Sweep => "sweep",
@@ -187,111 +441,573 @@ impl Effect {
             Effect::Pulse => "pulse",
             Effect::Rain => "rain",
             Effect::Aurora => "aurora",
+            Effect::Orbit => "orbit",
+            Effect::Warp => "warp",
+            Effect::Lava => "lava",
+            Effect::Ember => "ember",
+            Effect::Breathe => "breathe",
+        }
+    }
+
+    /// The name on the gallery tile.
+    pub fn title(self) -> &'static str {
+        match self {
+            Effect::Sweep => "Sweep",
+            Effect::Wave => "Wave",
+            Effect::Pulse => "Pulse",
+            Effect::Rain => "Rain",
+            Effect::Aurora => "Aurora",
+            Effect::Orbit => "Orbit",
+            Effect::Warp => "Warp",
+            Effect::Lava => "Lava",
+            Effect::Ember => "Ember",
+            Effect::Breathe => "Breathe",
+        }
+    }
+
+    /// One line under the tile, describing what you will see rather than how it
+    /// is computed.
+    pub fn sentence(self) -> &'static str {
+        match self {
+            Effect::Sweep => "A bar of light wipes across the dock and comes round again.",
+            Effect::Wave => "A travelling swell, as a bright crest or as liquid in a tank.",
+            Effect::Pulse => "Rings leave a point and fade as they widen.",
+            Effect::Rain => "Streaks fall at their own speeds, leaning with the wind.",
+            Effect::Aurora => "A slow field of colour with nothing in it to follow.",
+            Effect::Orbit => "A bright head runs a closed loop and drags its own blur.",
+            Effect::Warp => "Points streak out from the middle, lengthening as they fly.",
+            Effect::Lava => "Soft blobs drift, neck together and merge.",
+            Effect::Ember => "Fire climbs from one edge and tears into tongues.",
+            Effect::Breathe => "The whole dock swells and fades as a single lamp.",
+        }
+    }
+
+    /// Every knob this effect honours, in the order the editor shows them.
+    ///
+    /// The only source of truth: the `effects` socket reply carries this, the
+    /// app renders one row per entry, and a new effect grows the gallery with
+    /// no app build. A knob the effect ignores is left out rather than shown
+    /// dead — a slider that does nothing is worse than a slider that is absent.
+    pub fn knobs(self) -> &'static [&'static str] {
+        match self {
+            Effect::Sweep => &[
+                "speed", "direction", "cycle", "scale", "density", "softness", "shear", "color",
+                "color2", "color_cycle", "background", "opacity", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Wave => &[
+                "speed", "direction", "scale", "density", "softness", "fill", "color", "color2",
+                "color_cycle", "background", "opacity", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Pulse => &[
+                "speed", "direction", "cycle", "scale", "density", "softness", "origin", "color",
+                "color2", "color_cycle", "background", "opacity", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Rain => &[
+                "speed", "direction", "cycle", "scale", "density", "softness", "wind", "color",
+                "color2", "color_cycle", "background", "opacity", "seed", "mapping", "fps",
+                "stop_after", "reduce_motion",
+            ],
+            Effect::Aurora => &[
+                "speed", "direction", "scale", "softness", "bands", "color", "color2",
+                "color_cycle", "background", "opacity", "seed", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Orbit => &[
+                "speed", "direction", "cycle", "scale", "density", "softness", "lobes", "trail",
+                "color", "color2", "color_cycle", "background", "opacity", "mapping", "fps",
+                "stop_after", "reduce_motion",
+            ],
+            Effect::Warp => &[
+                "speed", "direction", "scale", "density", "softness", "exponent", "trail",
+                "origin", "color", "color2", "color_cycle", "background", "opacity", "seed",
+                "mapping", "fps", "stop_after", "reduce_motion",
+            ],
+            Effect::Lava => &[
+                "speed", "scale", "density", "softness", "threshold", "color", "color2",
+                "color_cycle", "background", "opacity", "seed", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Ember => &[
+                "speed", "direction", "scale", "softness", "height", "smoke", "color", "color2",
+                "color_cycle", "background", "opacity", "seed", "mapping", "fps", "stop_after",
+                "reduce_motion",
+            ],
+            Effect::Breathe => &[
+                "speed", "cycle", "shape", "floor", "color", "color2", "color_cycle",
+                "background", "opacity", "mapping", "fps", "stop_after", "reduce_motion",
+            ],
         }
     }
 }
 
-/// Draws one frame. `time` is seconds since the scene was painted.
-pub fn draw(effect: Effect, canvas: &mut Canvas, time: f32, tint: Rgb<u8>, background: Rgb<u8>) {
-    canvas.fill(background);
-
-    let width = canvas.width() as f32;
-    let height = canvas.height() as f32;
+/// Draws one frame.
+///
+/// `tau` is the phase accumulator, in tau-seconds. The background is laid down
+/// only when `style.clear` is set, so two effects can be painted into one
+/// canvas for a cross-fade.
+pub fn draw(effect: Effect, canvas: &mut Canvas, tau: f32, style: &Style) {
+    if style.clear {
+        canvas.fill(style.background);
+    }
 
     match effect {
-        Effect::Sweep => {
-            // A band of light, three keys wide at its brightest, wrapping.
-            let period = 2.6;
-            let head = ((time % period) / period) * (width + 80.0) - 40.0;
-            let tail = 46.0;
+        Effect::Sweep => sweep(canvas, tau, style),
+        Effect::Wave => wave(canvas, tau, style),
+        Effect::Pulse => pulse(canvas, tau, style),
+        Effect::Rain => rain(canvas, tau, style),
+        Effect::Aurora => aurora(canvas, tau, style),
+        Effect::Orbit => orbit(canvas, tau, style),
+        Effect::Warp => warp(canvas, tau, style),
+        Effect::Lava => lava(canvas, tau, style),
+        Effect::Ember => ember(canvas, tau, style),
+        Effect::Breathe => breathe(canvas, tau, style),
+    }
+}
 
-            for x in 0..canvas.width() {
-                let distance = head - x as f32;
-                if distance < 0.0 || distance > tail {
-                    continue;
-                }
-                let strength = (1.0 - distance / tail).powi(2);
-                for y in 0..canvas.height() {
-                    canvas.blend(x as i32, y as i32, tint, strength);
+/// A bar of light, with a soft tail behind it and a faint glow running ahead.
+/// The glow is what stops a hard edge from looking like a dropped frame when it
+/// emerges from under a bezel.
+fn sweep(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (span, cross) = extent(style.dir, width, height);
+
+    let bars = style.density.round().clamp(1.0, 4.0) as u32;
+    let tail = 46.0 * style.scale;
+    let lead = 10.0 * style.scale;
+    // One bar crosses in span/70 tau-seconds, so the picture travels at a
+    // constant 70 px per tau-second whatever the dock's size.
+    let base = phi(tau, span / 70.0, style.cycle);
+
+    let heads: Vec<f32> = (0..bars)
+        .map(|bar| {
+            let psi = (base + bar as f32 / bars as f32).fract();
+            psi * (span + 2.0 * tail) - tail
+        })
+        .collect();
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let (p, q, _, _) = axis(style.dir, x as f32, y as f32, width, height);
+            let skew = style.shear * (q - cross / 2.0);
+
+            for head in &heads {
+                let d = head - p + skew;
+                if d >= 0.0 && d <= tail {
+                    let u = 1.0 - d / tail;
+                    style.put(canvas, x as f32, y as f32, style.tint(u * u), style.feather(u));
+                } else if d < 0.0 && d >= -lead {
+                    let u = 1.0 + d / lead;
+                    style.put(canvas, x as f32, y as f32, style.tint(0.0), 0.45 * u * u);
                 }
             }
         }
+    }
+}
 
-        Effect::Wave => {
-            let speed = 1.7;
-            let wavelength = width / 1.6;
-            for x in 0..canvas.width() {
-                let phase = (x as f32 / wavelength - time * speed) * std::f32::consts::TAU;
-                let crest = height * 0.5 + phase.sin() * height * 0.28;
-                for y in 0..canvas.height() {
-                    let distance = (y as f32 - crest).abs();
-                    let strength = (1.0 - distance / 12.0).max(0.0).powi(2);
-                    if strength > 0.0 {
-                        canvas.blend(x as i32, y as i32, tint, strength);
+/// A swell. Two sines of different wavelength, so the crest is not a textbook
+/// curve; `fill` decides whether you are looking at a line or at a tank with
+/// something in it.
+fn wave(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (span, cross) = extent(style.dir, width, height);
+
+    let lam = (span / (1.6 * style.density.max(0.1))).max(4.0);
+    let thickness = 12.0 * style.scale;
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let (p, q, _, _) = axis(style.dir, x as f32, y as f32, width, height);
+            let theta = TAU * (p / lam - 1.7 * tau);
+            let crest =
+                cross * 0.5 + cross * 0.28 * (theta.sin() + 0.35 * (2.0 * theta + 1.7).sin()) / 1.35;
+            let d = q - crest;
+
+            let line = style.feather((1.0 - d.abs() / thickness).max(0.0));
+            if line > 0.0 {
+                style.put(canvas, x as f32, y as f32, style.tint(1.0), line);
+            }
+
+            if style.fill > 0.0 && d > 0.0 {
+                let depth = (d / thickness).min(1.0);
+                let floor = (d / (cross - crest).max(1.0)).min(1.0);
+                let body = style.fill * depth * (1.0 - floor).powf(0.6);
+                if body > 0.0 {
+                    style.put(canvas, x as f32, y as f32, style.tint(0.25), body);
+                }
+            }
+        }
+    }
+}
+
+/// Rings leaving a point. Drawn in physical geometry so they stay round across
+/// the bezels, and born at the dead centre of the horizontal seam by default,
+/// which means a ring is already sixteen pixels across when it first appears —
+/// exactly how you want something to arrive.
+fn pulse(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (drift_x, drift_y) = wander(tau);
+    let cx = width * style.origin.0 + drift_x;
+    let cy = height * style.origin.1 + drift_y;
+
+    // The far corner, so the last ring leaves the canvas rather than stopping.
+    let largest = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)]
+        .iter()
+        .map(|(x, y)| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt())
+        .fold(1.0, f32::max);
+
+    let rings = (3.0 * style.density).round().clamp(1.0, 6.0) as u32;
+    let thickness = 7.0 * style.scale;
+    let base = phi(tau, 2.2, style.cycle);
+    let inward = style.dir == Dir::In || style.dir == Dir::Left || style.dir == Dir::Up;
+
+    // Resolved once: the per-pixel loop below must not pay for a ring twice.
+    let fronts: Vec<(f32, f32)> = (0..rings)
+        .map(|ring| {
+            let mut psi = (base + ring as f32 / rings as f32).fract();
+            if inward {
+                psi = 1.0 - psi;
+            }
+            (psi * largest, 1.0 - psi)
+        })
+        .collect();
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let distance = ((x as f32 - cx).powi(2) + (y as f32 - cy).powi(2)).sqrt();
+            for (radius, fade) in &fronts {
+                let u = 1.0 - (distance - radius).abs() / thickness;
+                let alpha = style.feather(u) * fade * 0.9;
+                if alpha > 0.0 {
+                    style.put(canvas, x as f32, y as f32, style.tint(u.max(0.0)), alpha);
+                }
+            }
+        }
+    }
+}
+
+/// Streaks, each with its own speed. They are spread evenly across the dock and
+/// jittered rather than placed at random, because fourteen random columns
+/// leave a key dark about one time in a hundred — and a dark key reads as a
+/// broken key.
+fn rain(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (span, cross) = extent(style.dir, width, height);
+
+    let streaks = (14.0 * style.density).round().clamp(1.0, 80.0) as u32;
+    // Below sixteen pixels a streak stops bridging a seam and the rain reads as
+    // a row of blinking dots.
+    let length = (18.0 * style.scale).max(16.0);
+    let thickness = (2.0 * style.scale).round().max(1.0) as i32;
+    let (drift, _) = wander(tau);
+
+    for i in 0..streaks {
+        let velocity = 50.0 * (0.7 + 0.6 * h(i, 1, style.seed));
+        let travel = span + length;
+        let head = ((tau * velocity + h(i, 0, style.seed) * travel) / travel).fract() * travel
+            - length;
+        let lane = (i as f32 + 0.35 + 0.3 * h(i, 2, style.seed)) / streaks as f32 * cross + drift;
+
+        for step in 0..length as u32 {
+            let s = step as f32;
+            let u = 1.0 - s / length;
+            // The head is brighter than the formula allows, deliberately: it is
+            // what the eye tracks across a seam.
+            let alpha = style.feather(u) * if step == 0 { 1.3 } else { 1.0 };
+            if alpha <= 0.0 {
+                continue;
+            }
+            let (x, y) = unaxis(style.dir, head - s, lane + style.wind * s, width, height);
+            let colour = style.tint(u);
+            for t in 0..thickness {
+                let (ox, oy) = match style.dir {
+                    Dir::Down | Dir::Cw | Dir::Up | Dir::Ccw => (t as f32, 0.0),
+                    _ => (0.0, t as f32),
+                };
+                style.put(canvas, x + ox, y + oy, colour, alpha * if t == 0 { 1.0 } else { 0.45 });
+            }
+        }
+    }
+}
+
+/// Three slow fields crossing on periods that share no common multiple, so
+/// nothing repeats on a beat you can hear. `bands` posterises it into curtains.
+fn aurora(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (span, _) = extent(style.dir, width, height);
+    let nu = 1.0 / style.scale.max(0.05);
+    let (drift_x, drift_y) = wander(tau);
+    let sharpness = 0.5 + 2.0 * (1.0 - style.softness.clamp(0.0, 1.0));
+    // Where each of the three fields starts. The character is in the periods,
+    // which never change; the seed only decides where in them this dock sits.
+    let (o1, o2, o3) = (
+        TAU * h(0, 11, style.seed),
+        TAU * h(0, 12, style.seed),
+        TAU * h(0, 13, style.seed),
+    );
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let fx = (x as f32 + drift_x) / width;
+            let fy = (y as f32 + drift_y) / height;
+            let field = (fx * 2.4 * nu + tau * 0.23 + o1).sin()
+                + (fy * 3.1 * nu - tau * 0.17 + o2).cos()
+                + 0.5 * ((fx + fy) * 1.7 * nu + tau * 0.11 + o3).sin();
+
+            let mut n = (field / 2.5 * 0.5 + 0.5).clamp(0.0, 1.0);
+            if style.bands > 0 {
+                let bands = f32::from(style.bands);
+                let stepped = n * bands;
+                n = (stepped.floor() + smoothstep(0.35, 0.65, stepped.fract())) / bands;
+            }
+            n = n.powf(sharpness);
+
+            // The light leans the way the field travels, so a direction still
+            // means something to an effect with no front to move.
+            let (p, _, _, _) = axis(style.dir, x as f32, y as f32, width, height);
+            let tilt = 0.4 + 0.6 * (p / span);
+            style.put(canvas, x as f32, y as f32, style.tint(n), n * 0.55 * tilt);
+        }
+    }
+}
+
+/// A head on a closed path, drawn as twenty-four discs back along where it has
+/// just been. That is true motion blur, and it is the only mechanism in the
+/// catalogue that lets a five-pixel head survive a sixteen-pixel seam: the tail
+/// is still on the far key when the head arrives on the near one, and the eye
+/// joins them up by itself.
+fn orbit(canvas: &mut Canvas, tau: f32, style: &Style) {
+    const SAMPLES: u32 = 24;
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (drift_x, drift_y) = wander(tau);
+
+    let bodies = style.density.round().clamp(1.0, 4.0) as u32;
+    let radius = 5.0 * style.scale;
+    let spin = if style.dir == Dir::Ccw || style.dir == Dir::Left {
+        -1.0
+    } else {
+        1.0
+    };
+    let lobe_p = f32::from(style.lobes.0.max(1));
+    let lobe_q = f32::from(style.lobes.1.max(1));
+    let base = phi(tau, 2.4, style.cycle);
+    // The trail is a stretch of the path, not of the clock, so it keeps its
+    // length when the speed knob moves.
+    let back = (style.trail / 2.4).clamp(0.0, 0.9);
+
+    for body in 0..bodies {
+        let start = base + body as f32 / bodies as f32;
+        for k in 0..SAMPLES {
+            let age = k as f32 / SAMPLES as f32;
+            let s = start - back * age;
+            let px = width / 2.0 + 0.36 * width * (TAU * s * lobe_p * spin).cos() + drift_x;
+            let py = height / 2.0 + 0.34 * height * (TAU * s * lobe_q).sin() + drift_y;
+
+            let r = (radius * (1.0 - 0.6 * age)).max(0.8);
+            let weight = style.feather(1.0 - age);
+            if weight <= 0.0 {
+                continue;
+            }
+            let colour = style.tint(1.0 - age);
+
+            let span = r.ceil() as i32;
+            for dy in -span..=span {
+                for dx in -span..=span {
+                    let d = ((dx * dx + dy * dy) as f32).sqrt();
+                    let core = style.feather(1.0 - d / r);
+                    if core > 0.0 {
+                        style.put(canvas, px + dx as f32, py + dy as f32, colour, weight * core);
                     }
                 }
             }
         }
+    }
+}
 
-        Effect::Pulse => {
-            // Rings leaving the middle. Drawn in physical geometry so they stay
-            // round across the bezels.
-            let centre = (width / 2.0, height / 2.0);
-            let period = 2.2;
-            let largest = (width * width + height * height).sqrt() / 2.0;
+/// Stars born near the middle and thrown outward, each drawn as ten samples
+/// back along its own path. Because the path is closed-form in the star's
+/// progress, the streak lengthens by itself as the star accelerates — the jump
+/// to light speed, without a single extra parameter.
+fn warp(canvas: &mut Canvas, tau: f32, style: &Style) {
+    const SAMPLES: u32 = 10;
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (drift_x, drift_y) = wander(tau);
+    let cx = width * style.origin.0 + drift_x;
+    let cy = height * style.origin.1 + drift_y;
 
-            for ring in 0..3 {
-                let offset = ring as f32 / 3.0;
-                let progress = ((time / period) + offset).fract();
-                let radius = progress * largest;
-                let fade = 1.0 - progress;
+    let stars = (48.0 * style.density).round().clamp(8.0, 300.0) as u32;
+    let birth = 18.0 * style.scale;
+    let largest = [(0.0, 0.0), (width, 0.0), (0.0, height), (width, height)]
+        .iter()
+        .map(|(x, y)| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt())
+        .fold(1.0, f32::max);
+    let exponent = style.exponent.clamp(0.2, 8.0);
+    let swirl = match style.dir {
+        Dir::Cw => 0.3,
+        Dir::Ccw => -0.3,
+        _ => 0.0,
+    };
+    let inward = style.dir == Dir::In;
+    let back = (style.trail / 3.2).clamp(0.0, 0.9);
 
-                for y in 0..canvas.height() {
-                    for x in 0..canvas.width() {
-                        let dx = x as f32 - centre.0;
-                        let dy = y as f32 - centre.1;
-                        let distance = (dx * dx + dy * dy).sqrt();
-                        let strength = (1.0 - (distance - radius).abs() / 7.0).max(0.0);
-                        if strength > 0.0 {
-                            canvas.blend(x as i32, y as i32, tint, strength * fade * 0.9);
-                        }
-                    }
-                }
+    for i in 0..stars {
+        let angle = TAU * h(i, 0, style.seed) + swirl * tau;
+        let pace = 0.7 + 0.6 * h(i, 1, style.seed);
+        let z0 = (h(i, 2, style.seed) + tau * pace / 3.2).fract();
+
+        for j in 0..SAMPLES {
+            let age = j as f32 / SAMPLES as f32;
+            let z = z0 - back * age;
+            if z <= 0.0 {
+                break;
+            }
+            let t = if inward { 1.0 - z } else { z };
+            let r = birth + (largest - birth) * t.powf(exponent);
+            // A star that pops into existence at full brightness looks like a
+            // dead pixel, so the first fifteenth of its life is a fade-in.
+            let alpha = style.feather(1.0 - age) * smoothstep(0.0, 0.15, z);
+            if alpha <= 0.0 {
+                continue;
+            }
+            let x = cx + r * angle.cos();
+            let y = cy + r * angle.sin();
+            let colour = style.tint(1.0 - age);
+            style.put(canvas, x, y, colour, alpha);
+            style.put(canvas, x + 1.0, y, colour, alpha * 0.55);
+        }
+    }
+}
+
+/// A summed inverse-square field over drifting centres. The sum is the whole
+/// point: where two blobs come close the field between them crosses the
+/// threshold and a neck grows, which is what separates this from a bag of
+/// circles sliding past each other.
+fn lava(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (drift_x, drift_y) = wander(tau);
+
+    let blobs = (5.0 * style.density).round().clamp(2.0, 12.0) as u32;
+    let radius = 32.0 * style.scale;
+    let threshold = style.threshold.max(0.02);
+
+    // Phases are spread, not drawn from the hash, so the blobs never start the
+    // frame piled on one key.
+    let centres: Vec<(f32, f32, f32)> = (0..blobs)
+        .map(|i| {
+            let spread = (i as f32 + h(i, 1, style.seed)) / blobs as f32;
+            let x = 0.5 + 0.34 * (tau * 0.11 * (1.0 + 0.37 * h(i, 0, style.seed)) + TAU * spread).sin();
+            let y = 0.5
+                + 0.30 * (tau * 0.13 * (1.0 + 0.41 * h(i, 2, style.seed)) + TAU * spread * 1.7).cos();
+            (
+                x * width + drift_x,
+                y * height + drift_y,
+                radius * (0.6 + 0.8 * h(i, 3, style.seed)),
+            )
+        })
+        .collect();
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let mut field = 0.0;
+            for (bx, by, br) in &centres {
+                let dx = x as f32 - bx;
+                let dy = y as f32 - by;
+                field += br * br / (dx * dx + dy * dy + 1.0);
+            }
+            if field <= threshold {
+                continue;
+            }
+            let alpha = style.feather((field - threshold) / 0.6);
+            if alpha > 0.0 {
+                let heat = ((field - threshold) / (2.0 * threshold)).min(1.0);
+                style.put(canvas, x as f32, y as f32, style.tint(heat), alpha);
             }
         }
+    }
+}
 
-        Effect::Rain => {
-            // Deterministic streaks: no randomness, so a resumed frame looks
-            // like the frame before it.
-            let columns = 14;
-            for column in 0..columns {
-                let seed = (column as f32 * 12.9898).sin() * 43758.547;
-                let offset = seed.fract().abs();
-                let speed = 28.0 + offset * 46.0;
-                let x = (offset * width + column as f32 * (width / columns as f32)) % width;
-                let head = ((time * speed + offset * height) % (height + 30.0)) - 15.0;
+/// Fire. Three turbulent sines, and time enters only inside `(p + tau * v)`,
+/// which is pure advection: the texture rises through the flame instead of
+/// shimmering in place. Shimmer is what makes cheap fire look cheap.
+fn ember(canvas: &mut Canvas, tau: f32, style: &Style) {
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let (span, _) = extent(style.dir, width, height);
+    let nu = style.scale.max(0.05);
+    let reach = style.height.clamp(0.05, 1.0);
+    let (_, drift) = wander(tau);
 
-                for step in 0..18 {
-                    let y = head - step as f32;
-                    let strength = (1.0 - step as f32 / 18.0).powi(2);
-                    canvas.blend(x as i32, y as i32, tint, strength);
-                    canvas.blend(x as i32 + 1, y as i32, tint, strength * 0.45);
-                }
+    let phase1 = TAU * h(0, 1, style.seed);
+    let phase2 = TAU * h(0, 2, style.seed);
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let (p, q, _, _) = axis(style.dir, x as f32, y as f32, width, height);
+            let q = q + drift;
+            let f = p / span;
+
+            let turbulence = 0.5
+                + 0.35 * (q * 0.09 / nu + (p + tau * 70.0) * 0.07 / nu + phase1).sin()
+                + 0.15 * (q * 0.21 / nu - (p + tau * 119.0) * 0.17 / nu + phase2).sin()
+                + 0.12 * (q * 0.045 / nu + tau * 0.9).sin();
+
+            let alpha = style.feather(((1.0 - f / reach) * 2.0 * turbulence).clamp(0.0, 1.0));
+            if alpha <= 0.0 {
+                continue;
             }
+            // Hot at the base, cooling as it climbs, and dissolving into the
+            // background above `height` when there is smoke.
+            let heat = (f / reach).min(1.0);
+            let mut colour = mix(style.k, style.c, heat);
+            if style.smoke > 0.0 {
+                colour = mix(colour, style.background, style.smoke * heat);
+            }
+            style.put(canvas, x as f32, y as f32, colour, alpha);
         }
+    }
+}
 
-        Effect::Aurora => {
-            // Two slow fields crossing, so nothing repeats on an obvious beat.
-            for y in 0..canvas.height() {
-                for x in 0..canvas.width() {
-                    let fx = x as f32 / width;
-                    let fy = y as f32 / height;
-                    let a = (fx * 2.4 + time * 0.23).sin();
-                    let b = (fy * 3.1 - time * 0.17).cos();
-                    let strength = ((a + b) * 0.25 + 0.5).clamp(0.0, 1.0) * 0.55;
-                    canvas.blend(x as i32, y as i32, tint, strength);
-                }
-            }
+/// One lamp. A canvas fill and a single cheap pass, and the only member of the
+/// catalogue that is legible from across a room.
+fn breathe(canvas: &mut Canvas, tau: f32, style: &Style) {
+    const VIGNETTE: f32 = 0.25;
+    let width = canvas.width() as f32;
+    let height = canvas.height() as f32;
+    let psi = phi(tau, 5.0, style.cycle);
+
+    let envelope = match style.shape {
+        Shape::Sine => 0.5 - 0.5 * (TAU * psi).cos(),
+        Shape::Ease => smoothstep(0.0, 1.0, 1.0 - (2.0 * psi - 1.0).abs()),
+        Shape::Heartbeat => {
+            let beat = |centre: f32| (-((psi - centre) / 0.055).powi(2)).exp();
+            // The wrapped copy keeps the first beat continuous across the loop.
+            (beat(0.0) + beat(1.0) + 0.62 * beat(0.17)).min(1.0)
+        }
+    };
+
+    let floor = style.floor.clamp(0.0, 1.0);
+    let u = floor + (1.0 - floor) * envelope;
+    let colour = style.tint(u);
+    let cx = width / 2.0;
+    let cy = height / 2.0;
+    let far = (cx * cx + cy * cy).max(1.0);
+
+    for y in 0..canvas.height() {
+        for x in 0..canvas.width() {
+            let dx = x as f32 - cx;
+            let dy = y as f32 - cy;
+            let edge = 1.0 - VIGNETTE * ((dx * dx + dy * dy) / far);
+            style.put(canvas, x as f32, y as f32, colour, u * edge);
         }
     }
 }
@@ -299,6 +1015,51 @@ pub fn draw(effect: Effect, canvas: &mut Canvas, time: f32, tint: Rgb<u8>, backg
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The style the tests judge an effect by: every default the config layer
+    /// would apply, so a failure here is the effect's fault and not a knob's.
+    fn probe() -> Style {
+        Style {
+            c: Rgb([80, 160, 255]),
+            k: Rgb([255, 255, 255]),
+            background: Rgb([0, 0, 0]),
+            opacity: 1.0,
+            softness: 0.55,
+            scale: 1.0,
+            density: 1.0,
+            dir: Dir::Right,
+            cycle: Cycle::Wrap,
+            origin: (0.5, 0.5),
+            seed: 0,
+            clear: true,
+            shear: 0.0,
+            fill: 0.0,
+            bands: 0,
+            wind: 0.0,
+            lobes: (1, 1),
+            trail: 0.30,
+            exponent: 2.4,
+            threshold: 0.40,
+            height: 0.75,
+            smoke: 0.0,
+            shape: Shape::Sine,
+            floor: 0.06,
+        }
+    }
+
+    /// Each effect gets the direction it was designed around, the way the
+    /// config layer hands it over.
+    fn probe_for(effect: Effect) -> Style {
+        let mut style = probe();
+        style.dir = match effect {
+            Effect::Rain => Dir::Down,
+            Effect::Ember => Dir::Up,
+            Effect::Orbit => Dir::Cw,
+            Effect::Pulse | Effect::Warp => Dir::Out,
+            _ => Dir::Right,
+        };
+        style
+    }
 
     #[test]
     fn physical_canvas_leaves_room_for_the_seams() {
@@ -334,29 +1095,83 @@ mod tests {
 
     #[test]
     fn every_effect_puts_light_on_the_canvas() {
-        for effect in [
-            Effect::Sweep,
-            Effect::Wave,
-            Effect::Pulse,
-            Effect::Rain,
-            Effect::Aurora,
-        ] {
+        for effect in Effect::all() {
+            let style = probe_for(effect);
             let mut canvas = Canvas::new(effect.mapping(), 3, 2, 60);
             // Sampled over a second: a sweep is dark at some instants by design.
             let lit = (0..16)
                 .map(|step| {
-                    draw(
-                        effect,
-                        &mut canvas,
-                        step as f32 / 16.0,
-                        Rgb([80, 160, 255]),
-                        Rgb([0, 0, 0]),
-                    );
+                    draw(effect, &mut canvas, step as f32 / 16.0, &style);
                     canvas.image_mut().pixels().filter(|p| p[2] > 10).count()
                 })
                 .max()
                 .unwrap_or(0);
             assert!(lit > 100, "{effect:?} drew almost nothing");
+        }
+    }
+
+    /// Seam fairness. A motion that only ever lights four of the six keys turns
+    /// two keys into dead plastic, and on a desk that reads as a fault in the
+    /// dock rather than a choice in the effect.
+    #[test]
+    fn a_seam_never_hides_a_whole_feature() {
+        const STEPS: u32 = 48;
+        for effect in Effect::all() {
+            let style = probe_for(effect);
+            let mut canvas = Canvas::new(effect.mapping(), 3, 2, 60);
+            let mut brightest = [0u32; 6];
+
+            for step in 0..STEPS {
+                let tau = step as f32 * effect.period().min(4.0) / STEPS as f32;
+                draw(effect, &mut canvas, tau, &style);
+                for key in 0..canvas.keys() {
+                    let lit = canvas
+                        .tile(key)
+                        .pixels()
+                        .filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8)
+                        .count() as u32;
+                    brightest[key as usize] = brightest[key as usize].max(lit);
+                }
+            }
+
+            for (key, lit) in brightest.iter().enumerate() {
+                assert!(
+                    *lit > 0,
+                    "{effect:?} never lights key {key}; brightest was {brightest:?}"
+                );
+            }
+        }
+    }
+
+    /// A repaint after a config reload, a resumed frame, a second preview: all
+    /// of them must land on the picture the eye already had. That holds only
+    /// while nothing in here reads a clock or a random number of its own.
+    #[test]
+    fn the_picture_is_a_pure_function_of_tau_and_seed() {
+        for effect in Effect::all() {
+            let style = probe_for(effect);
+            let mut first = Canvas::new(effect.mapping(), 3, 2, 60);
+            let mut again = Canvas::new(effect.mapping(), 3, 2, 60);
+
+            draw(effect, &mut first, 1.37, &style);
+            draw(effect, &mut again, 1.37, &style);
+            assert_eq!(
+                first.image_mut().as_raw(),
+                again.image_mut().as_raw(),
+                "{effect:?} is not reproducible at the same tau"
+            );
+
+            let mut elsewhere = Canvas::new(effect.mapping(), 3, 2, 60);
+            let mut reseeded = style;
+            reseeded.seed = 7;
+            draw(effect, &mut elsewhere, 1.37, &reseeded);
+            if effect.knobs().contains(&"seed") {
+                assert_ne!(
+                    first.image_mut().as_raw(),
+                    elsewhere.image_mut().as_raw(),
+                    "{effect:?} offers a seed knob that changes nothing"
+                );
+            }
         }
     }
 }

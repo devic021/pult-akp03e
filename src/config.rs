@@ -6,7 +6,10 @@ use std::time::Duration;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use image::Rgb;
 use serde::{Deserialize, Serialize};
+
+use crate::canvas::Style;
 
 /// Starter config written on first run, so the daemon has something to show.
 pub const EXAMPLE: &str = include_str!("../config.example.toml");
@@ -44,6 +47,27 @@ pub struct Idle {
     pub after: String,
     /// The scene to show. Usually a canvas, but any scene will do.
     pub scene: String,
+    /// Or a playlist, which wins over `scene`. Each member is a whole scene, so
+    /// every member keeps its own effect, colours, geometry and frame rate —
+    /// and each can be judged on its own page before it goes in here.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenes: Vec<String>,
+    /// How long each member runs. Five minutes is long enough to stop feeling
+    /// like a slideshow.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hold: Option<String>,
+    /// Seconds of cross-dissolve between members. A hard cut in peripheral
+    /// vision on a desk reads as a fault, so the default is not zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fade: Option<f32>,
+    /// Seconds to ramp `opacity` from nothing when the screensaver starts, so
+    /// it arrives instead of appearing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fade_in: Option<f32>,
+    /// What counts as waking. `dock` is what you want when you are reading a
+    /// second screen and would rather the dock kept painting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wake_on: Option<WakeOn>,
     /// Dimmer than working brightness, and never below a quarter: the backlight
     /// shifts colour at the bottom of its range.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,11 +119,61 @@ impl Idle {
     }
 }
 
+/// What counts as activity while the dock is resting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WakeOn {
+    /// A keystroke, the pointer, or a press on the dock.
+    #[default]
+    Any,
+    /// Only a press on the dock itself.
+    Dock,
+}
+
+impl Idle {
+    /// The playlist, or the single scene as a playlist of one. Callers then
+    /// have one shape to handle instead of two.
+    pub fn playlist(&self) -> Vec<String> {
+        if self.scenes.is_empty() {
+            vec![self.scene.clone()]
+        } else {
+            self.scenes.clone()
+        }
+    }
+
+    pub fn hold(&self) -> Duration {
+        self.hold
+            .as_deref()
+            .and_then(crate::idle::parse_duration)
+            .filter(|held| !held.is_zero())
+            .unwrap_or(Duration::from_secs(300))
+    }
+
+    pub fn fade(&self) -> f32 {
+        self.fade.unwrap_or(2.5).clamp(0.0, 30.0)
+    }
+
+    pub fn fade_in(&self) -> f32 {
+        self.fade_in.unwrap_or(1.5).clamp(0.0, 30.0)
+    }
+
+    pub fn wake_on(&self) -> WakeOn {
+        self.wake_on.unwrap_or_default()
+    }
+}
+
 /// What a scene paints with.
 ///
 /// Absent means `keys`, so every configuration written before this existed
-/// keeps its meaning exactly.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// keeps its meaning exactly. Every field below is optional for the same
+/// reason: unset means the effect's own choice, and the daemon writes back
+/// only what was actually set, which is what keeps the file readable by hand.
+///
+/// Deliberately flat — no nested tables anywhere in here. `toml` refuses to
+/// emit a value after a table within one struct, and `config_survives_a_round_trip`
+/// is the test that catches it. Arrays of numbers are values, not tables, so
+/// `origin` and `lobes` are safe.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Surface {
     #[serde(default)]
     pub kind: SurfaceKind,
@@ -124,16 +198,228 @@ pub struct Surface {
     /// Quarter turns applied before fitting, for a clip filmed sideways.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub rotate: u16,
+    /// Repeat the source instead of fitting it. With `pan` this is an endless
+    /// scrolling wallpaper, which is the most reliable way to run your own art
+    /// on a dock with seams: nothing has an edge for a bezel to cut.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile: Option<bool>,
+    /// Pixels per second along `direction`, for a source. Setting this is what
+    /// turns a still picture into something the seams cannot spoil; 6 to 20 is
+    /// calm.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pan: Option<f32>,
+
+    // --- colour ------------------------------------------------------------
+    /// The hottest pixels.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// The second stop. Unset means the first lightened by 55%, so a
+    /// two-colour effect looks deliberate without anyone choosing twice.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color2: Option<String>,
+    /// The fill under everything. A near-black rather than pure black: a truly
+    /// black dock beside lit plastic reads as broken.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub background: Option<String>,
+    /// Seconds for one slow drift between the two stops; 0 or unset is off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color_cycle: Option<f32>,
+
+    // --- motion ------------------------------------------------------------
+    /// The only clock. `tau` advances by `dt * speed`, so changing this never
+    /// makes the picture jump — it changes how fast the phase grows, not where
+    /// the phase currently is.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub speed: Option<f32>,
+    /// Unset means the effect's own axis.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub direction: Option<crate::canvas::Dir>,
+    /// `bounce` turns a sweep into a scanning sentry and rain into a fish tank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cycle: Option<crate::canvas::Cycle>,
+
+    // --- size and amount ---------------------------------------------------
+    /// Multiplies every length and divides every spatial frequency. This is
+    /// the knob that decides whether a feature is wider than the 16 px seam.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<f32>,
+    /// Multiplies the count: bars, rings, streaks, stars, blobs, bodies.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub density: Option<f32>,
+    /// 0 a hard edge, 1 feathered across the whole half-width.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub softness: Option<f32>,
+    /// Fractions of the canvas, for `pulse` and `warp`. The middle is the dead
+    /// centre of the horizontal seam, so a ring is born behind plastic and
+    /// emerges already sixteen pixels across.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<[f32; 2]>,
+
+    // --- light -------------------------------------------------------------
+    /// The master fade, which the idle ramp rides. Not the backlight.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opacity: Option<f32>,
+    /// The only input to the catalogue's hash. The picture is a pure function
+    /// of `(tau, seed)`, so a repaint or a reload resumes where the eye left
+    /// off; change this for a different arrangement with the same character.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seed: Option<u32>,
+
+    // --- geometry, clock, manners -------------------------------------------
     /// Override the geometry the effect would choose for itself.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mapping: Option<crate::canvas::Mapping>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fps: Option<u8>,
-    /// The colour the motion is drawn in.
+    /// Hold the last frame after this long, so motion under your hands is not
+    /// a distraction in a scene you actually work in. Absent or `0s` never
+    /// stops, which is what a screensaver wants.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub color: Option<String>,
+    pub stop_after: Option<String>,
+    /// Paint one still frame when macOS asks for less motion.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub background: Option<String>,
+    pub reduce_motion: Option<bool>,
+
+    // --- the ones belonging to one effect only ------------------------------
+    /// `sweep`: tilts the bar; about ±0.3 is a diagonal wipe.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shear: Option<f32>,
+    /// `wave`: 0 a line, 0.5 liquid in a tank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fill: Option<f32>,
+    /// `aurora`: 0 a smooth field, 3 to 5 soft posterised steps.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bands: Option<u8>,
+    /// `rain`: sideways drift per step. Past about ±0.4 set
+    /// `mapping = "physical"`, or a steep slant kinks at every seam.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wind: Option<f32>,
+    /// `orbit`: 1,1 an ellipse; 3,2 a knot; 2,1 a figure of eight.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lobes: Option<[u8; 2]>,
+    /// `orbit` and `warp`: seconds of the past drawn. At 0 the head crosses a
+    /// seam invisibly, which is the one setting that can break those two.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub trail: Option<f32>,
+    /// `warp`: 1 a drift, 2.4 perspective, 4 a violent jump.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exponent: Option<f32>,
+    /// `lava`: low merges everything, high separates islands.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threshold: Option<f32>,
+    /// `ember`: how far up the span the flame reaches.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<f32>,
+    /// `ember`: dissolve the tip into the background.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub smoke: Option<f32>,
+    /// `breathe`: which envelope.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<crate::canvas::Shape>,
+    /// `breathe`: the level at the bottom of a breath. Keep it above zero so
+    /// the dock never looks switched off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub floor: Option<f32>,
+}
+
+/// The defaults, in the one place they are allowed to live.
+///
+/// Everything here is `clamp`, never `bail`: a number out of range is not
+/// worth losing the dock over, and a person dragging a slider past the end
+/// should see the end, not an error. `validate()` still refuses the two things
+/// that cannot be guessed — an unparseable colour and a canvas that names
+/// neither an effect nor a file.
+impl Surface {
+    const COLOR: Rgb<u8> = Rgb([80, 160, 255]);
+    const BACKGROUND: Rgb<u8> = Rgb([8, 9, 12]);
+
+    /// Resolves every knob for one frame. The only constructor of `Style`, so
+    /// no `unwrap_or` for any of these values exists anywhere else.
+    pub fn style(&self, tau: f32, effect: crate::canvas::Effect) -> Result<Style> {
+        let c = self.parse(self.color.as_deref(), "color")?.unwrap_or(Self::COLOR);
+        let k = match self.parse(self.color2.as_deref(), "color2")? {
+            Some(colour) => colour,
+            None => crate::canvas::mix(c, Rgb([255, 255, 255]), 0.55),
+        };
+        let background = self
+            .parse(self.background.as_deref(), "background")?
+            .unwrap_or(Self::BACKGROUND);
+
+        // A slow drift between the two stops, in tau-seconds like every other
+        // period here, so the speed knob carries the colour with it.
+        let (c, k) = match self.color_cycle {
+            Some(seconds) if seconds > 0.01 => {
+                let u = 0.5 - 0.5 * (std::f32::consts::TAU * tau / seconds).cos();
+                (crate::canvas::mix(c, k, u), crate::canvas::mix(k, c, u))
+            }
+            _ => (c, k),
+        };
+
+        let origin = self.origin.unwrap_or([0.5, 0.5]);
+        let lobes = self.lobes.unwrap_or([1, 1]);
+
+        Ok(Style {
+            c,
+            k,
+            background,
+            opacity: self.opacity.unwrap_or(1.0).clamp(0.0, 1.0),
+            softness: self.softness.unwrap_or(0.55).clamp(0.0, 1.0),
+            scale: self.scale.unwrap_or(1.0).clamp(0.25, 4.0),
+            density: self.density.unwrap_or(1.0).clamp(0.1, 3.0),
+            dir: self.direction.unwrap_or_else(|| effect.dir()),
+            cycle: self.cycle.unwrap_or_default(),
+            origin: (origin[0].clamp(0.0, 1.0), origin[1].clamp(0.0, 1.0)),
+            seed: self.seed.unwrap_or(0),
+            clear: true,
+            shear: self.shear.unwrap_or(0.0).clamp(-2.0, 2.0),
+            fill: self.fill.unwrap_or(0.0).clamp(0.0, 1.0),
+            bands: self.bands.unwrap_or(0).min(8),
+            wind: self.wind.unwrap_or(0.0).clamp(-4.0, 4.0),
+            lobes: (lobes[0].clamp(1, 8), lobes[1].clamp(1, 8)),
+            trail: self.trail.unwrap_or(0.30).clamp(0.0, 4.0),
+            exponent: self.exponent.unwrap_or(2.4).clamp(1.0, 4.0),
+            threshold: self.threshold.unwrap_or(0.40).clamp(0.02, 4.0),
+            height: self.height.unwrap_or(0.75).clamp(0.05, 1.0),
+            smoke: self.smoke.unwrap_or(0.0).clamp(0.0, 1.0),
+            shape: self.shape.unwrap_or_default(),
+            floor: self.floor.unwrap_or(0.06).clamp(0.0, 1.0),
+        })
+    }
+
+    /// How fast `tau` grows. Not part of `Style`: no effect may read it, which
+    /// is exactly what stops a speed change from moving the picture.
+    pub fn speed(&self) -> f32 {
+        self.speed.unwrap_or(1.0).clamp(0.05, 4.0)
+    }
+
+    pub fn mapping_for(&self, effect: crate::canvas::Effect) -> crate::canvas::Mapping {
+        self.mapping.unwrap_or_else(|| effect.mapping())
+    }
+
+    pub fn fps_for(&self, effect: crate::canvas::Effect) -> u8 {
+        self.fps.unwrap_or_else(|| effect.fps()).clamp(1, 30)
+    }
+
+    /// How long motion runs before the last frame simply stays. `None` means
+    /// never stop.
+    pub fn stop_after(&self) -> Option<Duration> {
+        let text = self.stop_after.as_deref()?;
+        crate::idle::parse_duration(text).filter(|held| !held.is_zero())
+    }
+
+    pub fn respects_reduce_motion(&self) -> bool {
+        self.reduce_motion.unwrap_or(true)
+    }
+
+    fn parse(&self, text: Option<&str>, field: &str) -> Result<Option<Rgb<u8>>> {
+        match text {
+            Some(text) => Ok(Some(
+                crate::render::parse_color(text)
+                    .with_context(|| format!("surface {field} is not a colour: {text:?}"))?,
+            )),
+            None => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,11 +633,20 @@ impl Config {
         }
 
         if let Some(idle) = &self.idle {
-            if !self.scenes.contains_key(&idle.scene) {
-                bail!("idle scene {:?} is not defined", idle.scene);
+            // The playlist is checked member by member and names the one that
+            // is wrong: "idle playlist" on its own sends you reading the file.
+            for member in idle.playlist() {
+                if !self.scenes.contains_key(&member) {
+                    bail!("idle scene {member:?} is not defined");
+                }
             }
             if crate::idle::parse_duration(&idle.after).is_none() {
                 bail!("idle after {:?} is not a duration like 30s, 3m or 1h", idle.after);
+            }
+            if let Some(hold) = &idle.hold {
+                if crate::idle::parse_duration(hold).is_none() {
+                    bail!("idle hold {hold:?} is not a duration like 30s, 5m or 1h");
+                }
             }
             // A missing sleep picture is not worth refusing the whole file
             // over: the dock would stop working over a renamed image. It is
@@ -376,9 +671,19 @@ impl Config {
                 if surface.effect.is_none() && surface.source.is_none() {
                     bail!("scene {name:?} is a canvas but names neither effect nor source");
                 }
-                for colour in [&surface.color, &surface.background].into_iter().flatten() {
+                // Numbers out of range are clamped where they are read, but a
+                // colour cannot be guessed, so it is still refused here.
+                for colour in [&surface.color, &surface.color2, &surface.background]
+                    .into_iter()
+                    .flatten()
+                {
                     crate::render::parse_color(colour)
                         .with_context(|| format!("in scene {name:?}"))?;
+                }
+                if let Some(held) = &surface.stop_after {
+                    if crate::idle::parse_duration(held).is_none() {
+                        bail!("scene {name:?} has stop_after {held:?}, not a duration like 30s");
+                    }
                 }
             }
 

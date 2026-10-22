@@ -79,6 +79,15 @@ pub enum Request {
     EffectStrips {
         frames: Option<usize>,
     },
+    /// The catalogue: every effect, what it looks like in one sentence, and
+    /// exactly which knobs it honours.
+    ///
+    /// The app renders one control per name in `knobs`, which is why this
+    /// exists at all: a hard-coded list of sliders in Swift outlives the
+    /// daemon it was written against, and then shows a control that does
+    /// nothing. Here the daemon that draws the effect is also the only thing
+    /// that says what the effect can be told.
+    Effects,
     /// Put a surface on the real dock for a moment, without saving it.
     ///
     /// The only way to judge how the seams cut a motion is to watch them do
