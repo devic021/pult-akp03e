@@ -165,8 +165,6 @@ Six 60×60 screens with plastic between them are not a 180×120 image. The gaps
 are real — about a quarter of a key — so a canvas is larger than the sum of its
 keys, and each key is a window cut out of it.
 
-![Every effect, with the real seams drawn in](assets/readme/effects.png)
-
 * **Physical** — 212×136, true geometry. A circle stays round and a diagonal
   stays straight, at the cost that a travelling front disappears for the width
   of each bezel. Right for rings, orbits and anything with a shape.
@@ -174,7 +172,8 @@ keys, and each key is a window cut out of it.
   speed and never stalls. Right for sweeps and meters.
 
 Static text and photographs belong on neither: a letter cut by 16 px of plastic
-is a letter gone.
+is a letter gone. `cargo run --bin sheet` draws every effect this way, bezels
+included, if you want to see it rather than read it.
 
 ## Build from source
 
