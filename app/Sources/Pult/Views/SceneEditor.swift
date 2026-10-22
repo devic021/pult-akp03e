@@ -13,7 +13,12 @@ struct SceneEditor: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         SceneHeader(name: name, scene: scene)
-                        DevicePanel(name: name, scene: scene)
+
+                        VStack(spacing: 10) {
+                            DevicePanel(name: name, scene: scene)
+                            SceneSummary(scene: scene)
+                                .frame(maxWidth: Dock.body.width)
+                        }
                     }
                     .padding(.horizontal, 28)
                     .padding(.vertical, 24)
@@ -24,7 +29,7 @@ struct SceneEditor: View {
                 Divider().ignoresSafeArea()
 
                 Inspector()
-                    .frame(width: 330)
+                    .frame(minWidth: 300, idealWidth: 340, maxWidth: 420)
             }
             .task(id: TaskKey(scene: name, page: state.page, keys: scene.keys)) {
                 state.prefetchCurrentPage()
@@ -53,30 +58,44 @@ private struct SceneHeader: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .center, spacing: 12) {
+            HStack(alignment: .center, spacing: 10) {
                 if renaming {
                     TextField("", text: $draft)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 28, weight: .semibold))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 24, weight: .semibold))
+                        .frame(maxWidth: 320)
                         .onSubmit {
                             state.renameScene(name, to: draft)
                             renaming = false
                         }
-                        .frame(maxWidth: 320)
+                        .onExitCommand { renaming = false }
+
+                    Button(T("status.save")) {
+                        state.renameScene(name, to: draft)
+                        renaming = false
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
                 } else {
                     Text(name)
                         .font(.system(size: 28, weight: .semibold))
-                        .onTapGesture(count: 2) {
-                            draft = name
-                            renaming = true
-                        }
+
+                    Button {
+                        draft = name
+                        renaming = true
+                    } label: {
+                        Image(systemName: "pencil")
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .help(T("scene.rename"))
                 }
 
                 if name == state.config.defaultScene {
                     Label(T("scene.isDefault"), systemImage: "star.fill")
                         .labelStyle(.iconOnly)
                         .foregroundStyle(.yellow)
-                        .help(T("scene.isDefault"))
+                        .help(T("help.default"))
                 }
 
                 Spacer()
@@ -88,18 +107,20 @@ private struct SceneHeader: View {
                 Button {
                     state.addPage()
                 } label: {
-                    Image(systemName: "plus.rectangle.on.rectangle")
+                    Label(T("scene.page.add"), systemImage: "plus.rectangle.on.rectangle")
+                        .frame(height: headerControlHeight - 10)
                 }
                 .buttonStyle(.glass)
-                .help(T("scene.page.add"))
+                .help(T("help.page"))
 
                 Button {
                     state.show(scene: name)
                 } label: {
-                    Image(systemName: "play.fill")
+                    Label(T("scene.show"), systemImage: "play.fill")
+                        .frame(height: headerControlHeight - 10)
                 }
                 .buttonStyle(.glass)
-                .help(T("scene.show"))
+                .help(T("help.showScene"))
             }
 
             AppChips(name: name, apps: scene.apps)
@@ -107,137 +128,217 @@ private struct SceneHeader: View {
     }
 }
 
+/// Height every control in the scene's header shares, so they line up.
+private let headerControlHeight: CGFloat = 28
+
 private struct PagePicker: View {
     @EnvironmentObject private var state: AppState
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             ForEach(0..<state.pages, id: \.self) { index in
+                let current = state.page == index
                 Button {
                     state.page = index
                     state.selection = nil
                 } label: {
                     Text("\(index + 1)")
                         .font(.callout.weight(.medium))
-                        .frame(width: 26, height: 22)
+                        // The whole chip is the target, not the digit: aiming
+                        // at a numeral is not a way to turn a page.
+                        .frame(minWidth: 30, maxHeight: .infinity)
+                        .padding(.horizontal, 4)
+                        .contentShape(.capsule)
                 }
                 .buttonStyle(.plain)
                 .background {
-                    if state.page == index {
-                        Capsule().fill(Color.accentColor.opacity(0.85))
+                    if current {
+                        Capsule().fill(Color.accentColor.opacity(0.9))
                     }
                 }
-                .foregroundStyle(state.page == index ? .white : .secondary)
+                .foregroundStyle(current ? AnyShapeStyle(.white) : AnyShapeStyle(.secondary))
+                .help("\(T("scene.page")) \(index + 1)")
             }
         }
-        .padding(4)
+        .padding(3)
+        .frame(height: headerControlHeight)
         .glassEffect(in: .capsule)
     }
 }
 
+/// Which applications bring this scene up. Named, not spelled out in
+/// reverse-DNS, and introduced by a sentence saying what the row is for.
 private struct AppChips: View {
     @EnvironmentObject private var state: AppState
     let name: String
     let apps: [String]
+    @State private var adding = false
 
     var body: some View {
-        FlowRow(spacing: 8) {
-            ForEach(Array(apps.enumerated()), id: \.offset) { index, app in
-                HStack(spacing: 6) {
-                    Image(systemName: "app.fill").font(.caption2).foregroundStyle(.tint)
-                    Text(app).font(.callout)
-                    Button {
-                        state.updateScene(name) { $0.apps.remove(at: index) }
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 9, weight: .bold))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tertiary)
-                }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .glassEffect(in: .capsule)
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.right.circle").foregroundStyle(.tint)
+                Text(T("scene.apps.intro"))
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
             }
 
-            Menu {
-                ForEach(state.running) { app in
-                    Button(app.name) {
+            FlowRow(spacing: 8) {
+                ForEach(Array(apps.enumerated()), id: \.offset) { index, app in
+                    AppChip(bundleID: app) {
+                        state.updateScene(name) { $0.apps.remove(at: index) }
+                    }
+                }
+
+                Button {
+                    adding = true
+                } label: {
+                    Label(T("scene.apps.add"), systemImage: "plus")
+                        .font(.callout)
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .help(T("help.apps"))
+                .popover(isPresented: $adding, arrowEdge: .bottom) {
+                    AppPickerPopover(chosen: Set(apps)) { app in
                         state.updateScene(name) { scene in
                             if !scene.apps.contains(app.bundleID) {
                                 scene.apps.append(app.bundleID)
                             }
                         }
+                        adding = false
                     }
                 }
-            } label: {
-                Label(T("scene.apps.add"), systemImage: "plus")
-                    .font(.callout)
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .glassEffect(in: .capsule)
+
+            if apps.isEmpty && name != state.config.defaultScene {
+                Text(T("scene.apps.none"))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
         }
     }
 }
 
 // MARK: - The dock
 
-/// The hardware, laid out as it sits on the desk.
+/// The hardware, drawn where the hardware's parts are: six keys to the left,
+/// three plain buttons under them, the big knob to the right with the two
+/// small ones below it. Positions come from the device itself, so what is on
+/// screen matches what is under your hand.
 private struct DevicePanel: View {
     @EnvironmentObject private var state: AppState
     let name: String
     let scene: DeckScene
 
     var body: some View {
-        GlassEffectContainer(spacing: 22) {
-            HStack(alignment: .top, spacing: 34) {
-                VStack(spacing: 22) {
-                    KeyGrid()
-                    RoundButtons(name: name, scene: scene)
+        DockBody {
+            ZStack(alignment: .topLeading) {
+                VStack(spacing: 0) {
+                    DockBadge(scale: Dock.scale)
+                    Spacer()
+                }
+                .frame(width: Dock.body.width, height: Dock.body.height)
+                .padding(.top, 15 * Dock.scale)
+
+                ForEach(0..<6, id: \.self) { slot in
+                    let frame = Dock.keyFrame(slot)
+                    KeyCap(slot: slot)
+                        .frame(width: frame.width, height: frame.height)
+                        .help(keyHelp(slot))
+                        .offset(x: frame.minX, y: frame.minY)
                 }
 
-                VStack(spacing: 26) {
-                    KnobControl(index: 1, diameter: 104)
-                    HStack(spacing: 22) {
-                        KnobControl(index: 0, diameter: 62)
-                        KnobControl(index: 2, diameter: 62)
+                Control(centre: Dock.bigKnobCenter, size: Dock.bigKnob, label: T("encoder.1")) {
+                    KnobFace(diameter: Dock.bigKnob, selected: knobSelected(1))
+                        .onTapGesture { state.selection = .knob(1, .cw) }
+                        .help(knobHelp(1))
+                }
+
+                ForEach(Array(Dock.smallKnobCenters.enumerated()), id: \.offset) { position, centre in
+                    let index = position == 0 ? 0 : 2
+                    Control(centre: centre, size: Dock.smallKnob, label: T("encoder.\(index)")) {
+                        KnobFace(diameter: Dock.smallKnob, selected: knobSelected(index))
+                            .onTapGesture { state.selection = .knob(index, .cw) }
+                            .help(knobHelp(index))
                     }
                 }
-                .padding(.top, 4)
-            }
-            .padding(30)
-            .background {
-                RoundedRectangle(cornerRadius: 30)
-                    .fill(.black.opacity(0.22))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 30)
-                            .strokeBorder(.white.opacity(0.07), lineWidth: 1)
+
+                ForEach(Array(Dock.buttonCenters.enumerated()), id: \.offset) { index, centre in
+                    Control(centre: centre, size: Dock.button, label: "\(index + 1)") {
+                        ButtonFace(
+                            diameter: Dock.button,
+                            bound: index < scene.buttons.count && !scene.buttons[index].isEmpty,
+                            selected: state.selection == .button(index)
+                        )
+                        .onTapGesture { state.selection = .button(index) }
+                        .help(buttonHelp(index))
                     }
+                }
             }
-            .glassPanel(cornerRadius: 30)
+            .frame(width: Dock.body.width, height: Dock.body.height, alignment: .topLeading)
         }
+    }
+
+    private func knobSelected(_ index: Int) -> Bool {
+        if case .knob(let knob, _) = state.selection { return knob == index }
+        return false
+    }
+
+    // Tooltips carry what the drawing deliberately leaves out: the device has
+    // no labels on its knobs and no marks on its buttons, so hovering is how
+    // you find out what a control is bound to without clicking it.
+
+    private func keyHelp(_ slot: Int) -> String {
+        guard let key = state.key(at: slot), !key.isBlank else { return T("key.empty") }
+        let name = key.label.isEmpty ? (key.icon ?? T("key.title")) : key.label
+        return "\(name)\n\(key.action.summary)"
+    }
+
+    private func knobHelp(_ index: Int) -> String {
+        let knob = index < scene.encoders.count ? scene.encoders[index] : Knob()
+        return [
+            T("encoder.\(index)"),
+            "\(T("encoder.ccw")): \(knob.ccw.summary)",
+            "\(T("encoder.cw")): \(knob.cw.summary)",
+            "\(T("encoder.press")): \(knob.press.summary)",
+        ].joined(separator: "\n")
+    }
+
+    private func buttonHelp(_ index: Int) -> String {
+        let action = index < scene.buttons.count ? scene.buttons[index] : Action()
+        return "\(String(format: T("button.n"), "\(index + 1)"))\n\(action.summary)"
     }
 }
 
-private struct KeyGrid: View {
-    @EnvironmentObject private var state: AppState
+/// Width of the invisible column a part and its caption are centred in.
+private let controlLane: CGFloat = 150
+
+/// A part of the dock, placed by its centre, with its name in the shell's
+/// bottom margin where the real device has bare plastic.
+private struct Control<Content: View>: View {
+    let centre: CGPoint
+    /// Needed to place the part by its middle rather than its top edge.
+    let size: CGFloat
+    let label: String
+    @ViewBuilder let content: Content
 
     var body: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.fixed(104), spacing: 14), count: 3),
-            spacing: 14
-        ) {
-            ForEach(0..<6, id: \.self) { slot in
-                KeyTile(slot: slot)
-            }
+        VStack(spacing: 5) {
+            content
+            Text(label)
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.38))
+                .lineLimit(1)
+                .fixedSize()
         }
+        .frame(width: controlLane)
+        .offset(x: centre.x - controlLane / 2, y: centre.y - size / 2)
     }
 }
 
-private struct KeyTile: View {
+/// One key with a display, showing exactly what the dock shows.
+private struct KeyCap: View {
     @EnvironmentObject private var state: AppState
     let slot: Int
 
@@ -247,36 +348,56 @@ private struct KeyTile: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 14)
-                .fill(.black.opacity(0.35))
+            // The cap: dark, with a single bright edge. A wide pale frame is
+            // what made these read as grey bands rather than as key caps.
+            RoundedRectangle(cornerRadius: Dock.keyCorner)
+                .fill(Color(white: 0.10))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Dock.keyCorner)
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.40), .white.opacity(0.10)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            ),
+                            lineWidth: 1
+                        )
+                }
 
-            if let key, !key.isBlank, let image = state.image(for: key) {
-                Image(nsImage: image)
-                    .resizable()
-                    .interpolation(.high)
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .padding(2)
-            } else {
-                Image(systemName: "plus")
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundStyle(.white.opacity(0.22))
+            // The display sits inside the cap, with a thin dark border.
+            ZStack {
+                RoundedRectangle(cornerRadius: Dock.keyCorner - 4).fill(.black)
+
+                if let key, !key.isBlank, let image = state.image(for: key) {
+                    Image(nsImage: image)
+                        .resizable()
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .clipShape(RoundedRectangle(cornerRadius: Dock.keyCorner - 5))
+                } else {
+                    Image(systemName: "plus")
+                        .font(.system(size: 15, weight: .light))
+                        .foregroundStyle(.white.opacity(0.16))
+                }
             }
+            .padding(Dock.keyBezel)
         }
-        .frame(width: 104, height: 104)
         .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(ring, lineWidth: selected || pressed ? 2.5 : 1)
+            RoundedRectangle(cornerRadius: Dock.keyCorner)
+                .strokeBorder(
+                    selected ? Color.accentColor : (pressed ? Color.green : .clear),
+                    lineWidth: 2.5
+                )
         }
-        .shadow(color: .black.opacity(0.35), radius: selected ? 10 : 4, y: 2)
-        .scaleEffect(pressed ? 0.94 : 1)
+        .shadow(color: .black.opacity(0.6), radius: 3, y: 1)
+        .scaleEffect(pressed ? 0.93 : 1)
         .animation(.spring(duration: 0.2), value: pressed)
         .animation(.smooth(duration: 0.18), value: selected)
         .contentShape(.rect)
         .onTapGesture { state.selection = .key(slot) }
         .draggable(KeySlot(slot: slot)) {
             if let key, let image = state.image(for: key) {
-                Image(nsImage: image).resizable().frame(width: 64, height: 64)
+                Image(nsImage: image).resizable().frame(width: 60, height: 60)
             } else {
                 Color.clear.frame(width: 1, height: 1)
             }
@@ -288,12 +409,6 @@ private struct KeyTile: View {
             return true
         }
     }
-
-    private var ring: Color {
-        if pressed { return .green }
-        if selected { return .accentColor }
-        return .white.opacity(0.08)
-    }
 }
 
 /// Dragging a key between slots carries only which slot it came from.
@@ -302,106 +417,6 @@ struct KeySlot: Codable, Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         CodableRepresentation(contentType: .pultKeySlot)
-    }
-}
-
-private struct RoundButtons: View {
-    @EnvironmentObject private var state: AppState
-    let name: String
-    let scene: DeckScene
-
-    var body: some View {
-        HStack(spacing: 20) {
-            ForEach(0..<3, id: \.self) { index in
-                let bound = index < scene.buttons.count && !scene.buttons[index].isEmpty
-                let selected = state.selection == .button(index)
-
-                VStack(spacing: 6) {
-                    Circle()
-                        .fill(.black.opacity(0.35))
-                        .frame(width: 46, height: 46)
-                        .overlay {
-                            Circle().strokeBorder(
-                                selected ? Color.accentColor : .white.opacity(bound ? 0.3 : 0.08),
-                                lineWidth: selected ? 2.5 : 1
-                            )
-                        }
-                        .overlay {
-                            if bound {
-                                Circle().fill(.tint).frame(width: 7, height: 7)
-                            }
-                        }
-                    Text("\(index + 1)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
-                .contentShape(.rect)
-                .onTapGesture { state.selection = .button(index) }
-                .animation(.smooth(duration: 0.18), value: selected)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-private struct KnobControl: View {
-    @EnvironmentObject private var state: AppState
-    let index: Int
-    let diameter: CGFloat
-
-    private var selected: Bool {
-        if case .knob(let knob, _) = state.selection { return knob == index }
-        return false
-    }
-
-    private var knob: Knob {
-        let encoders = state.scene?.encoders ?? []
-        return index < encoders.count ? encoders[index] : Knob()
-    }
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [.white.opacity(0.10), .black.opacity(0.40)],
-                            center: .topLeading,
-                            startRadius: 2,
-                            endRadius: diameter
-                        )
-                    )
-                Circle()
-                    .strokeBorder(
-                        selected ? Color.accentColor : .white.opacity(0.12),
-                        lineWidth: selected ? 2.5 : 1
-                    )
-
-                // The knurling, suggested rather than drawn.
-                ForEach(0..<24, id: \.self) { tick in
-                    Capsule()
-                        .fill(.white.opacity(0.10))
-                        .frame(width: 1.2, height: diameter * 0.07)
-                        .offset(y: -diameter / 2 + diameter * 0.055)
-                        .rotationEffect(.degrees(Double(tick) / 24 * 360))
-                }
-
-                Circle()
-                    .fill(.black.opacity(0.25))
-                    .frame(width: diameter * 0.42, height: diameter * 0.42)
-            }
-            .frame(width: diameter, height: diameter)
-            .shadow(color: .black.opacity(0.4), radius: selected ? 10 : 5, y: 2)
-            .contentShape(.circle)
-            .onTapGesture { state.selection = .knob(index, .cw) }
-            .animation(.smooth(duration: 0.18), value: selected)
-
-            Text(T("encoder.\(index)"))
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .frame(maxWidth: diameter + 20)
-                .multilineTextAlignment(.center)
-        }
     }
 }
 

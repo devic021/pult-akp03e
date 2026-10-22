@@ -58,8 +58,12 @@ pub enum Request {
         size: Option<u32>,
         pages: Option<(usize, usize)>,
     },
-    /// Every bundled icon rendered at one size, for the icon picker.
+    /// Icons rendered at one size, for the picker.
+    ///
+    /// `names` is what the picker can actually see; drawing all 1865 on every
+    /// keystroke would be several seconds of work nobody looks at.
     IconSheet {
+        names: Option<Vec<String>>,
         size: Option<u32>,
         color: Option<String>,
     },

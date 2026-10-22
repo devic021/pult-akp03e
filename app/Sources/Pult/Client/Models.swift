@@ -38,6 +38,27 @@ struct Action: Codable, Equatable, Hashable {
         var label: String { T("action.\(rawValue)") }
     }
 
+    /// One line saying what this does, for tooltips and lists.
+    var summary: String {
+        switch kind {
+        case .none:
+            return T("action.none")
+        case .app:
+            return "\(T("action.app")): \(app ?? "")"
+        case .run:
+            return "\(T("action.run")): \(run ?? "")"
+        case .shortcut:
+            return "\(T("action.shortcut")): \(shortcut ?? "")"
+        case .volume:
+            let value = volume ?? 0
+            return "\(T("action.volume")): \(value > 0 ? "+" : "")\(value)"
+        case .scene:
+            return "\(T("action.scene")): \(scene ?? "")"
+        case .page:
+            return "\(T("action.page")): \(page?.label ?? "")"
+        }
+    }
+
     /// Switches to another kind of action, dropping the old one: a key can
     /// only carry one, and a leftover field would be written to the file.
     mutating func become(_ kind: Kind) {

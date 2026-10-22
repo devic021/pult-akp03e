@@ -658,7 +658,15 @@ fn serve(
         }
 
         Request::Icons => {
-            reply.ok(json!({ "icons": pult::icons::names() }));
+            // The synonyms travel with the names: the picker searches by
+            // meaning, and it is the only thing that needs them.
+            let tags: serde_json::Value =
+                serde_json::from_str(pult::icons::TAGS_JSON).unwrap_or(serde_json::Value::Null);
+            reply.answer(json!({
+                "ok": true,
+                "icons": pult::icons::names(),
+                "tags": tags,
+            }));
             Ok(false)
         }
 
@@ -720,15 +728,19 @@ fn serve(
             Ok(false)
         }
 
-        Request::IconSheet { size, color } => {
+        Request::IconSheet { names, size, color } => {
             let size = size.unwrap_or(64);
             let renderer = Renderer::new(state.config.font.as_deref(), (size, size))?;
             let color = color.unwrap_or_else(|| "#f5f5f5".to_string());
 
+            let wanted: Vec<String> = names.unwrap_or_else(|| {
+                pult::icons::names().into_iter().map(str::to_string).collect()
+            });
+
             let mut sheet = serde_json::Map::new();
-            for name in pult::icons::names() {
+            for name in wanted {
                 let key = Key {
-                    icon: Some(name.to_string()),
+                    icon: Some(name.clone()),
                     icon_color: Some(color.clone()),
                     color: Some("#1c1f26".to_string()),
                     ..Key::default()
@@ -737,7 +749,7 @@ fn serve(
                     .key_frame(&key, Frame::default())
                     .and_then(|image| encode_png(&image))
                 {
-                    sheet.insert(name.to_string(), serde_json::Value::String(png));
+                    sheet.insert(name, serde_json::Value::String(png));
                 }
             }
 

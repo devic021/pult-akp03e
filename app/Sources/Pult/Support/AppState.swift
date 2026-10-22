@@ -29,6 +29,8 @@ final class AppState: ObservableObject {
     @Published var selection: Selection?
 
     @Published private(set) var icons: [String] = []
+    /// Lucide's synonyms, so the picker can be searched by meaning.
+    @Published private(set) var iconTags: [String: [String]] = [:]
     /// Which key the dock reported as pressed, so the editor can echo it.
     @Published var livePress: Int?
 
@@ -36,7 +38,8 @@ final class AppState: ObservableObject {
     @Published private(set) var renders: [RenderRequest: NSImage] = [:]
     @Published private(set) var iconSheet: [String: NSImage] = [:]
     private var inFlight: Set<RenderRequest> = []
-    private var iconSheetLoading = false
+    private var iconsWanted: Set<String> = []
+    private var iconBatchTimer: Timer?
 
     /// What the inspector is editing.
     enum Selection: Hashable {
@@ -65,7 +68,9 @@ final class AppState: ObservableObject {
         io.async { [client] in
             let status = try? client.send(["cmd": "status"], as: Status.self)
             let config = try? client.send(["cmd": "config"], as: Config.self, field: "config")
-            let icons = try? client.send(["cmd": "icons"], as: [String].self, field: "icons")
+            let iconReply = try? client.send(["cmd": "icons"])
+            let icons = iconReply?["icons"] as? [String]
+            let tags = iconReply?["tags"] as? [String: [String]]
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -82,6 +87,7 @@ final class AppState: ObservableObject {
                     self.config = config
                 }
                 if let icons { self.icons = icons }
+                if let tags { self.iconTags = tags }
                 if self.selectedScene == nil {
                     self.selectedScene = status.scene ?? config.sceneNames.first
                 }
@@ -238,12 +244,12 @@ final class AppState: ObservableObject {
     }
 
     /// Reads the cache. Never starts work: see the note at the top.
-    func image(for key: Key, size: Int = 120, pages: RenderRequest.Pages? = nil) -> NSImage? {
+    func image(for key: Key, size: Int = 160, pages: RenderRequest.Pages? = nil) -> NSImage? {
         renders[RenderRequest(key: key, size: size, pages: pages)]
     }
 
     /// Draws whatever of `keys` is not cached yet, in one round trip.
-    func prefetch(_ keys: [Key], size: Int = 120, pages: RenderRequest.Pages? = nil) {
+    func prefetch(_ keys: [Key], size: Int = 160, pages: RenderRequest.Pages? = nil) {
         let wanted = keys.map { RenderRequest(key: $0, size: size, pages: pages) }
         let missing = wanted.filter { renders[$0] == nil && !inFlight.contains($0) }
         guard !missing.isEmpty else { return }
@@ -280,7 +286,7 @@ final class AppState: ObservableObject {
     }
 
     /// Draws the keys of the page on screen.
-    func prefetchCurrentPage(size: Int = 120) {
+    func prefetchCurrentPage(size: Int = 160) {
         guard let scene else { return }
         let perPage = 6
         let start = page * perPage
@@ -288,22 +294,56 @@ final class AppState: ObservableObject {
         prefetch(keys, size: size)
     }
 
-    /// Every bundled icon at picker size, in one round trip rather than 93.
-    func loadIconSheet() {
-        guard iconSheet.isEmpty, !iconSheetLoading else { return }
-        iconSheetLoading = true
+    /// Asks for an icon's art, batching whatever else is asked for in the same
+    /// moment.
+    ///
+    /// There are nearly two thousand icons. Drawing them all on the chance the
+    /// picker is opened would be seconds of work and megabytes over the socket,
+    /// so the grid asks for what it is about to show and these are gathered
+    /// into one request.
+    func needIcon(_ name: String) {
+        guard iconSheet[name] == nil, !iconsWanted.contains(name) else { return }
+        iconsWanted.insert(name)
+
+        guard iconBatchTimer == nil else { return }
+        iconBatchTimer = Timer.scheduledTimer(withTimeInterval: 0.06, repeats: false) { [weak self] _ in
+            Task { @MainActor in self?.flushIconRequests() }
+        }
+    }
+
+    private func flushIconRequests() {
+        iconBatchTimer = nil
+        let wanted = Array(iconsWanted.prefix(160))
+        guard !wanted.isEmpty else { return }
+        iconsWanted.subtract(wanted)
 
         io.async { [client] in
-            let reply = try? client.send(["cmd": "icon_sheet", "size": 72])
+            let reply = try? client.send([
+                "cmd": "icon_sheet",
+                "size": 72,
+                "names": wanted,
+            ])
             let sheet = (reply?["icons"] as? [String: String]) ?? [:]
             let images = sheet.compactMapValues { encoded in
                 Data(base64Encoded: encoded).flatMap { NSImage(data: $0) }
             }
 
             Task { @MainActor [weak self] in
-                self?.iconSheet = images
-                self?.iconSheetLoading = false
+                guard let self else { return }
+                self.iconSheet.merge(images) { _, new in new }
+                // Anything still waiting goes out in the next batch.
+                if !self.iconsWanted.isEmpty { self.flushIconRequests() }
             }
+        }
+    }
+
+    /// Names matching a search, by name and by Lucide's own synonyms.
+    func searchIcons(_ query: String) -> [String] {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !needle.isEmpty else { return icons }
+
+        return icons.filter { name in
+            name.contains(needle) || (iconTags[name]?.contains { $0.contains(needle) } ?? false)
         }
     }
 
@@ -427,14 +467,34 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Icons of what is running, so the status bar can show a face rather than
+    /// a bundle ID.
+    @Published private(set) var runningIcons: [String: NSImage] = [:]
+
     private func refreshRunningApps() {
-        running = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
+        let apps = NSWorkspace.shared.runningApplications.filter {
+            $0.activationPolicy == .regular
+        }
+
+        running = apps
             .compactMap { app in
                 guard let id = app.bundleIdentifier else { return nil }
                 return RunningApp(name: app.localizedName ?? id, bundleID: id)
             }
             .sorted { $0.name.lowercased() < $1.name.lowercased() }
+
+        var icons: [String: NSImage] = [:]
+        for app in apps {
+            if let id = app.bundleIdentifier, let icon = app.icon {
+                icons[id] = icon
+            }
+        }
+        runningIcons = icons
+    }
+
+    /// The readable name of an application, falling back to its bundle ID.
+    func name(ofApp bundleID: String) -> String {
+        running.first { $0.bundleID == bundleID }?.name ?? bundleID
     }
 }
 

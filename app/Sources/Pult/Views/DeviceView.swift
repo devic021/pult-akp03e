@@ -47,9 +47,12 @@ struct DeviceView: View {
                             .monospacedDigit()
                             .frame(width: 46, alignment: .trailing)
                     }
+                    .help(T("help.brightness"))
 
                     HStack {
-                        Button(T("device.sleep")) { state.sleepDock() }.buttonStyle(.glass)
+                        Button(T("device.sleep")) { state.sleepDock() }
+                            .buttonStyle(.glass)
+                            .help(T("help.sleep"))
                         Button(T("device.wake")) { state.wakeDock() }.buttonStyle(.glass)
                     }
                 }

@@ -70,17 +70,22 @@ private struct KeyEditor: View {
             TextField("", text: key.label)
                 .textFieldStyle(.roundedBorder)
         }
+        .help(T("help.label"))
 
         Field(T("key.icon")) {
             IconField(icon: key.icon)
         }
+        .help(T("help.icon"))
 
         HStack(spacing: 10) {
             Field(T("key.color")) { ColorField(hex: key.color, fallback: "#30363d") }
+                .help(T("help.color"))
             Field(T("key.iconColor")) { ColorField(hex: key.icon_color, fallback: nil) }
+                .help(T("help.iconColor"))
         }
 
         Field(T("key.textColor")) { ColorField(hex: key.text_color, fallback: nil) }
+            .help(T("help.textColor"))
 
         Field(T("key.animate")) {
             Picker("", selection: key.animate) {
@@ -92,10 +97,12 @@ private struct KeyEditor: View {
             }
             .labelsHidden()
         }
+        .help(T("help.animate"))
 
         Divider().padding(.vertical, 4)
 
         ActionEditor(action: key.action)
+            .help(T("help.action"))
 
         Button(role: .destructive) {
             state.setKey(nil, at: slot)
@@ -104,6 +111,7 @@ private struct KeyEditor: View {
                 .frame(maxWidth: .infinity)
         }
         .buttonStyle(.glass)
+        .help(T("help.clear"))
         .padding(.top, 6)
     }
 

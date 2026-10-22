@@ -87,19 +87,9 @@ private struct AppField: View {
     @StateObject private var installed = Installed.shared
     @Binding var bundleID: String
     @State private var picking = false
-    @State private var search = ""
 
     private var chosen: Installed.App? {
         installed.apps.first { $0.bundleID == bundleID }
-    }
-
-    private var matches: [Installed.App] {
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return query.isEmpty
-            ? installed.apps
-            : installed.apps.filter {
-                $0.name.lowercased().contains(query) || $0.bundleID.lowercased().contains(query)
-            }
     }
 
     var body: some View {
@@ -123,49 +113,9 @@ private struct AppField: View {
         .buttonStyle(.glass)
         .task { installed.load() }
         .popover(isPresented: $picking, arrowEdge: .leading) {
-            VStack(spacing: 10) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField(T("action.app.choose"), text: $search)
-                        .textFieldStyle(.plain)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .glassEffect(in: .capsule)
-
-                ScrollView {
-                    LazyVStack(spacing: 2) {
-                        ForEach(matches) { app in
-                            Button {
-                                choose(app)
-                            } label: {
-                                HStack(spacing: 9) {
-                                    Image(nsImage: installed.icon(for: app))
-                                        .resizable().frame(width: 22, height: 22)
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        Text(app.name).lineLimit(1)
-                                        Text(app.bundleID)
-                                            .font(.caption2)
-                                            .foregroundStyle(.tertiary)
-                                            .lineLimit(1)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 7).padding(.vertical, 4)
-                                .contentShape(.rect)
-                            }
-                            .buttonStyle(.plain)
-                            .background {
-                                if app.bundleID == bundleID {
-                                    RoundedRectangle(cornerRadius: 7)
-                                        .fill(Color.accentColor.opacity(0.3))
-                                }
-                            }
-                        }
-                    }
-                }
+            AppPickerPopover(chosen: bundleID.isEmpty ? [] : [bundleID]) { app in
+                choose(app)
             }
-            .padding(12)
-            .frame(width: 340, height: 400)
         }
     }
 

@@ -1,6 +1,9 @@
 import SwiftUI
 
-/// One icon, out of the sheet the daemon rendered in a single round trip.
+/// One icon, drawn by the daemon so it matches the dock exactly.
+///
+/// The art is asked for when the view appears and arrives a moment later; with
+/// nearly two thousand icons, drawing them up front is not an option.
 struct IconThumb: View {
     @EnvironmentObject private var state: AppState
     let name: String?
@@ -21,21 +24,21 @@ struct IconThumb: View {
             }
         }
         .frame(width: size, height: size)
-        .task { state.loadIconSheet() }
+        .task(id: name) {
+            if let name, !name.isEmpty { state.needIcon(name) }
+        }
     }
 }
 
-/// The bundled set, searchable.
+/// The bundled set, searched by name and by Lucide's own synonyms, so "cut"
+/// finds the scissors.
 struct IconPicker: View {
     @EnvironmentObject private var state: AppState
     @Binding var selection: String?
     let dismiss: () -> Void
     @State private var search = ""
 
-    private var matches: [String] {
-        let query = search.trimmingCharacters(in: .whitespaces).lowercased()
-        return query.isEmpty ? state.icons : state.icons.filter { $0.contains(query) }
-    }
+    private var matches: [String] { state.searchIcons(search) }
 
     var body: some View {
         VStack(spacing: 12) {
@@ -74,14 +77,28 @@ struct IconPicker: View {
                                 }
                         }
                         .buttonStyle(.plain)
-                        .help(name)
+                        .help(help(for: name))
                     }
                 }
                 .padding(.vertical, 2)
             }
+
+            HStack(spacing: 4) {
+                Text("\(matches.count)")
+                    .font(.caption.monospacedDigit())
+                Text(T("icon.count"))
+                    .font(.caption)
+                Spacer()
+            }
+            .foregroundStyle(.tertiary)
         }
         .padding(14)
-        .frame(width: 470, height: 390)
-        .task { state.loadIconSheet() }
+        .frame(width: 470, height: 430)
+    }
+
+    /// The name, plus the words it can be found by.
+    private func help(for name: String) -> String {
+        guard let tags = state.iconTags[name], !tags.isEmpty else { return name }
+        return "\(name)\n\(tags.joined(separator: ", "))"
     }
 }
