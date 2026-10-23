@@ -169,6 +169,13 @@ final class AppState: ObservableObject {
 
     /// What every feed has last said, and where the dock thinks it is.
     @Published private(set) var feeds = FeedReport.empty
+    /// Until when a change to the file is one this app asked for.
+    ///
+    /// The daemon rewrites the configuration for a feed change or a moved pin
+    /// and announces it like any other edit. Without this, changing an
+    /// interval while something else is unsaved would warn you that the file
+    /// changed underneath you, about a change you had just made.
+    private var expectingWrite: Date?
 
     /// Asks the daemon about its feeds, polling one of them first when named.
     ///
@@ -202,6 +209,9 @@ final class AppState: ObservableObject {
         params: [String: String]? = nil,
         then report: ((String?) -> Void)? = nil
     ) {
+        // The daemon will rewrite the file and the watcher will announce it.
+        // That announcement is ours, not a surprise.
+        expectingWrite = Date().addingTimeInterval(3)
         var request: [String: Any] = ["cmd": "set_feed", "name": name]
         if let every { request["every"] = every }
         if let params { request["params"] = params }
@@ -215,13 +225,26 @@ final class AppState: ObservableObject {
             Task { @MainActor [weak self] in
                 report?(message)
                 guard let self else { return }
-                if message == nil {
-                    // The daemon rewrote the file, so what this app holds is
-                    // now a version behind. Taking it back avoids the next
-                    // save putting the old interval straight back.
-                    self.refresh()
-                }
+                if message == nil { self.adoptFeeds() }
                 self.loadFeeds()
+            }
+        }
+    }
+
+    /// Takes back the feed table after the daemon has rewritten it.
+    ///
+    /// That one key, not the whole configuration. The feeds are not modelled
+    /// here, only carried through as an unknown table, so a change made by
+    /// `set_feed` leaves this app holding the old one. A full reload would
+    /// refuse to land while anything else is being edited, and the next save
+    /// would then write the old interval straight back over the new one.
+    private func adoptFeeds() {
+        io.async { [client] in
+            let fresh = try? client.send(["cmd": "config"], as: Config.self, field: "config")
+            Task { @MainActor [weak self] in
+                guard let self, let fresh else { return }
+                self.config.extra["feeds"] = fresh.extra["feeds"]
+                self.saved.extra["feeds"] = fresh.extra["feeds"]
             }
         }
     }
@@ -354,6 +377,9 @@ final class AppState: ObservableObject {
         case "key_up":
             livePress = nil
         case "config":
+            if let until = expectingWrite, Date() < until {
+                return
+            }
             // The file changed underneath us. With nothing unsaved, take it:
             // holding a stale snapshot is how an edit made in the file gets
             // overwritten by the next save from here.

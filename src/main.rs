@@ -521,9 +521,10 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                                 && state.config.pinned.as_deref() != Some(active.as_str())
                             {
                                 state.config.pinned = Some(active.clone());
-                                match state.config.save(&state.path) {
-                                    Ok(()) => state.stamp = modified(&state.path),
-                                    Err(e) => eprintln!("could not move the pin: {e:#}"),
+                                // The stamp is left for the watcher, which
+                                // reads the file back and announces it.
+                                if let Err(e) = state.config.save(&state.path) {
+                                    eprintln!("could not move the pin: {e:#}");
                                 }
                                 println!("Pinned  : {active:?}");
                             }
@@ -1748,7 +1749,11 @@ fn serve(
                 reply.fail(format!("{e:#}"));
                 return Ok(false);
             }
-            state.stamp = modified(&state.path);
+            // The stamp is deliberately left alone. The watcher then sees the
+            // file as changed, reads it back and announces it like any other
+            // edit, which is what the editor needs: it carries the feed table
+            // through without modelling it, so without being told it goes on
+            // holding the version from before this call.
             state.restart_feeds();
             println!("Feed    : {name} every {}", changed.every);
             reply.ok(json!({ "feed": name }));
