@@ -18,6 +18,7 @@
 #   run      = "shell command"     runs it detached
 #   shortcut = "cmd+shift+4"       sends a keystroke (needs Accessibility)
 #   volume   = -5                  changes output volume by that much
+#   mute     = "toggle"|"on"|"off" silences the output
 #   scene    = "other"             switches scene by hand
 #   page     = "next"|"prev"|"first"
 #   hour     = "next"|"prev"|"now" walks a forecast (see vrednosti)
@@ -72,7 +73,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "ctrl+right" }, ccw = { shortcut = "ctrl+left" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ----------------------------------------------------------------- VS Code ---
@@ -104,7 +105,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+alt+right" }, ccw = { shortcut = "cmd+alt+left" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------- Xcode ---
@@ -136,7 +137,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ---------------------------------------------- Android Studio / WebStorm ----
@@ -169,7 +170,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ----------------------------------------------------------------- Resolve ---
@@ -204,7 +205,7 @@ encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   # Playhead by frame, click to play.
   { cw = { shortcut = "right" }, ccw = { shortcut = "left" }, press = { shortcut = "space" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------ Chrome ---
@@ -236,7 +237,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+alt+right" }, ccw = { shortcut = "cmd+alt+left" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------- iTerm ---
@@ -268,7 +269,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+shift+right" }, ccw = { shortcut = "cmd+shift+left" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------ Finder ---
@@ -300,7 +301,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+shift+]" }, ccw = { shortcut = "cmd+shift+[" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------- Figma ---
@@ -332,7 +333,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+=" }, ccw = { shortcut = "cmd+-" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------- Teams ---
@@ -359,7 +360,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { volume = 5 }, ccw = { volume = -5 } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------------- Slack ---
@@ -384,7 +385,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "alt+down" }, ccw = { shortcut = "alt+up" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ---------------------------------------------------------------- Telegram ---
@@ -409,7 +410,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "ctrl+tab" }, ccw = { shortcut = "ctrl+shift+tab" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ---------------------------------------------------------------- WhatsApp ---
@@ -434,7 +435,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "ctrl+tab" }, ccw = { shortcut = "ctrl+shift+tab" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # -------------------------------------------------------------------- Mail ---
@@ -459,7 +460,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "down" }, ccw = { shortcut = "up" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ---------------------------------------------------------------- Calendar ---
@@ -484,7 +485,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+right" }, ccw = { shortcut = "cmd+left" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ------------------------------------------------------------- Luminar Neo ---
@@ -511,7 +512,7 @@ buttons = [
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   { cw = { shortcut = "cmd+=" }, ccw = { shortcut = "cmd+-" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ======================================================================= platno
@@ -533,7 +534,7 @@ buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" } },
   { cw = { scene = "talas" }, ccw = { scene = "dah" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 [scenes.prelet.surface]
 kind = "canvas"
@@ -553,6 +554,8 @@ fill = 0.45               # its own: liquid in a tank instead of a bare line
 
 [scenes.puls]
 buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [ {}, {}, { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } } ]
+
 [scenes.puls.surface]
 kind = "canvas"
 effect = "pulse"
@@ -563,6 +566,8 @@ origin = [0.5, 0.5]       # its own: rings are born in the middle of the seam,
 
 [scenes.kisa]
 buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [ {}, {}, { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } } ]
+
 [scenes.kisa.surface]
 kind = "canvas"
 effect = "rain"
@@ -573,6 +578,8 @@ wind = 0.25               # its own: sideways drift. Past about 0.4 add
 
 [scenes.zora]
 buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [ {}, {}, { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } } ]
+
 [scenes.zora.surface]
 kind = "canvas"
 effect = "aurora"
@@ -791,7 +798,7 @@ encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
   # The big knob walks the forecast. It comes back to now on its own.
   { cw = { hour = "next" }, ccw = { hour = "prev" }, press = { hour = "now" } },
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]
 
 # ================================================================== mirovanje
@@ -836,6 +843,8 @@ sleep_image = "~/.config/pult/sleep.png"
 
 [scenes.moja]
 buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [ {}, {}, { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } } ]
+
 [scenes.moja.surface]
 kind = "canvas"
 source = "~/.config/pult/proba.gif"
@@ -843,6 +852,8 @@ mapping = "packed"
 
 [scenes.uspravno]
 buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+encoders = [ {}, {}, { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } } ]
+
 [scenes.uspravno.surface]
 kind = "canvas"
 source = "~/.config/pult/uspravno.gif"
@@ -938,5 +949,5 @@ encoders = [
   # another scene" means a page you are reading jumps away under an idle
   # hand, which also quietly defeats pinning.
   {},
-  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { mute = "toggle" } },
 ]

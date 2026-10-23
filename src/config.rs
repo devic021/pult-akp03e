@@ -764,6 +764,13 @@ pub struct Action {
     /// Output volume change in percentage points, e.g. `-5`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub volume: Option<i32>,
+    /// Silence the output: `toggle`, `on` or `off`.
+    ///
+    /// An action of its own rather than a keystroke. The mute key is F10, not
+    /// F8, and sending either depends on how the keyboard is set up and needs
+    /// permission to send keys at all, while setting the volume needs neither.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mute: Option<Mute>,
     /// Move through a scene's pages: `next`, `prev` or `first`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<Page>,
@@ -782,6 +789,15 @@ pub enum Hour {
     Next,
     Prev,
     Now,
+}
+
+/// What to do to the output mute.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Mute {
+    Toggle,
+    On,
+    Off,
 }
 
 /// Which page of a scene to show.
@@ -804,6 +820,7 @@ impl Action {
             + usize::from(self.shortcut.is_some())
             + usize::from(self.scene.is_some())
             + usize::from(self.volume.is_some())
+            + usize::from(self.mute.is_some())
             + usize::from(self.page.is_some())
             + usize::from(self.hour.is_some())
     }

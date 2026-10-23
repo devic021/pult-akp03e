@@ -14,12 +14,13 @@ struct Action: Codable, Equatable, Hashable {
     var shortcut: String?
     var scene: String?
     var volume: Int?
+    var mute: MuteSet?
     var page: PageTurn?
     var hour: HourStep?
 
     var isEmpty: Bool {
-        app == nil && run == nil && shortcut == nil
-            && scene == nil && volume == nil && page == nil && hour == nil
+        app == nil && run == nil && shortcut == nil && scene == nil
+            && volume == nil && mute == nil && page == nil && hour == nil
     }
 
     /// Which of the mutually exclusive actions this is.
@@ -28,6 +29,7 @@ struct Action: Codable, Equatable, Hashable {
         if run != nil { return .run }
         if shortcut != nil { return .shortcut }
         if volume != nil { return .volume }
+        if mute != nil { return .mute }
         if scene != nil { return .scene }
         if page != nil { return .page }
         if hour != nil { return .hour }
@@ -35,7 +37,7 @@ struct Action: Codable, Equatable, Hashable {
     }
 
     enum Kind: String, CaseIterable, Identifiable {
-        case none, app, run, shortcut, volume, scene, page, hour
+        case none, app, run, shortcut, volume, mute, scene, page, hour
         var id: String { rawValue }
         var label: String { T("action.\(rawValue)") }
     }
@@ -54,6 +56,8 @@ struct Action: Codable, Equatable, Hashable {
         case .volume:
             let value = volume ?? 0
             return "\(T("action.volume")): \(value > 0 ? "+" : "")\(value)"
+        case .mute:
+            return "\(T("action.mute")): \(mute?.label ?? "")"
         case .scene:
             return "\(T("action.scene")): \(scene ?? "")"
         case .page:
@@ -67,13 +71,14 @@ struct Action: Codable, Equatable, Hashable {
     /// only carry one, and a leftover field would be written to the file.
     mutating func become(_ kind: Kind) {
         app = nil; run = nil; shortcut = nil; scene = nil
-        volume = nil; page = nil; hour = nil
+        volume = nil; mute = nil; page = nil; hour = nil
         switch kind {
         case .none: break
         case .app: app = ""
         case .run: run = ""
         case .shortcut: shortcut = ""
         case .volume: volume = 5
+        case .mute: mute = .toggle
         case .scene: scene = ""
         case .page: page = .next
         case .hour: hour = .next
@@ -85,6 +90,17 @@ enum PageTurn: String, Codable, CaseIterable, Identifiable {
     case next, prev, first
     var id: String { rawValue }
     var label: String { T("action.page.\(rawValue)") }
+}
+
+/// What a press does to the output mute.
+///
+/// An action of its own rather than a keystroke: the mute key is F10, not F8,
+/// and sending either depends on how the keyboard is set up and needs
+/// permission to send keys at all, while setting the volume needs neither.
+enum MuteSet: String, Codable, CaseIterable, Identifiable {
+    case toggle, on, off
+    var id: String { rawValue }
+    var label: String { T("action.mute.\(rawValue)") }
 }
 
 /// Which hour of a forecast the whole scene reads from.
@@ -233,13 +249,14 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var shortcut: String?
     var scene: String?
     var volume: Int?
+    var mute: MuteSet?
     var page: PageTurn?
     var hour: HourStep?
 
     enum CodingKeys: String, CodingKey {
         case label, color, text_color, icon, icon_color, icon_rotate, animate
         case value, caption, ramp, cycle
-        case app, run, shortcut, scene, volume, page, hour
+        case app, run, shortcut, scene, volume, mute, page, hour
     }
 
     init(
@@ -276,6 +293,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         shortcut = try values.decodeIfPresent(String.self, forKey: .shortcut)
         scene = try values.decodeIfPresent(String.self, forKey: .scene)
         volume = try values.decodeIfPresent(Int.self, forKey: .volume)
+        mute = try values.decodeIfPresent(MuteSet.self, forKey: .mute)
         page = try values.decodeIfPresent(PageTurn.self, forKey: .page)
         hour = try values.decodeIfPresent(HourStep.self, forKey: .hour)
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Key.known) ?? [:]
@@ -287,7 +305,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     private static let known: Set<String> = [
         "label", "color", "text_color", "icon", "icon_color", "icon_rotate", "animate",
         "value", "caption", "ramp", "cycle",
-        "app", "run", "shortcut", "scene", "volume", "page", "hour",
+        "app", "run", "shortcut", "scene", "volume", "mute", "page", "hour",
     ]
 
     func encode(to encoder: Encoder) throws {
@@ -308,6 +326,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         try values.encodeIfPresent(shortcut, forKey: .shortcut)
         try values.encodeIfPresent(scene, forKey: .scene)
         try values.encodeIfPresent(volume, forKey: .volume)
+        try values.encodeIfPresent(mute, forKey: .mute)
         try values.encodeIfPresent(page, forKey: .page)
         try values.encodeIfPresent(hour, forKey: .hour)
         try encoder.encodeExtra(extra)
@@ -317,7 +336,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         get {
             Action(
                 app: app, run: run, shortcut: shortcut,
-                scene: scene, volume: volume, page: page, hour: hour
+                scene: scene, volume: volume, mute: mute, page: page, hour: hour
             )
         }
         set {
@@ -326,6 +345,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
             shortcut = newValue.shortcut
             scene = newValue.scene
             volume = newValue.volume
+            mute = newValue.mute
             page = newValue.page
             hour = newValue.hour
         }

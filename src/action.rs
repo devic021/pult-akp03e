@@ -4,7 +4,7 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result};
 
-use crate::config::{Action, Hour, Page};
+use crate::config::{Action, Hour, Mute, Page};
 
 /// A key press can ask for a different scene or page; everything else is a
 /// side effect.
@@ -43,6 +43,8 @@ pub fn describe(action: &Action) -> String {
         format!("shortcut {shortcut:?}")
     } else if let Some(delta) = action.volume {
         format!("volume {delta:+}")
+    } else if let Some(mute) = action.mute {
+        format!("mute {mute:?}").to_lowercase()
     } else if let Some(scene) = &action.scene {
         format!("scene {scene:?}")
     } else if let Some(page) = action.page {
@@ -86,6 +88,11 @@ pub fn run(action: &Action) -> Result<Outcome> {
 
     if let Some(delta) = action.volume {
         change_volume(delta)?;
+        return Ok(Outcome::Nothing);
+    }
+
+    if let Some(mute) = action.mute {
+        set_mute(mute)?;
         return Ok(Outcome::Nothing);
     }
 
@@ -217,6 +224,25 @@ fn change_volume(delta: i32) -> Result<()> {
          set volume output volume target"
     );
     osascript(&script).context("changing volume")
+}
+
+/// Silences the output, or lets it speak again.
+///
+/// Through the same route as the volume, which asks macOS to set a value and
+/// needs no permission at all. The alternative is pressing F10 for somebody,
+/// which needs the right to send keystrokes and then depends on whether their
+/// function keys are set up as function keys.
+fn set_mute(mute: Mute) -> Result<()> {
+    let script = match mute {
+        Mute::Toggle => {
+            "set muted to output muted of (get volume settings)\n\
+             set volume output muted (not muted)"
+                .to_string()
+        }
+        Mute::On => "set volume output muted true".to_string(),
+        Mute::Off => "set volume output muted false".to_string(),
+    };
+    osascript(&script).context("setting mute")
 }
 
 fn osascript(script: &str) -> Result<()> {

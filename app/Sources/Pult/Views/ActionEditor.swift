@@ -59,6 +59,21 @@ struct ActionEditor: View {
                         .font(.appCallout.monospacedDigit())
                 }
 
+            case .mute:
+                Picker("", selection: Binding(
+                    get: { action.mute ?? .toggle },
+                    set: { action.mute = $0 }
+                )) {
+                    ForEach(MuteSet.allCases) { set in
+                        Text(set.label).tag(set)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                if !compact {
+                    Text(T("action.mute.help")).font(.appCaption).foregroundStyle(.secondary)
+                }
+
             case .scene:
                 SceneChooser(selection: Binding(
                     get: { action.scene ?? "" },
