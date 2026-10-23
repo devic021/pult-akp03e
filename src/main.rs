@@ -44,6 +44,12 @@ const MIN_TIMEOUT: Duration = Duration::from_millis(2);
 /// How long a key stays lit after being pressed.
 const PRESS_FLASH: Duration = Duration::from_millis(180);
 
+/// How long the dock shows the output level after it changes.
+///
+/// Long enough to read while the hand is still on the knob, short enough that
+/// the page you were looking at is not taken away from you.
+const METER_HOLDS: Duration = Duration::from_millis(1200);
+
 /// How long a scrubbed forecast holds before it comes back to now.
 ///
 /// It must come back on its own: a dock left three hours ahead is a dock
@@ -369,6 +375,11 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     // in between.
     let mut next_frame = Instant::now() + FRAME_INTERVAL;
     let mut pressed: Option<(u8, Instant)> = None;
+    // The output level, while it is worth showing. macOS draws its own
+    // overlay only for a real key press, which would mean asking for the
+    // right to send keystrokes and a round trip per detent; this is where the
+    // hand already is.
+    let mut meter: Option<Instant> = None;
 
     control.publish(json!({
         "event": "device",
@@ -542,6 +553,10 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                                 }));
                             }
                         }
+                        Some(Step::Sound(sound)) => {
+                            paint_meter(&device, &found, sound)?;
+                            meter = Some(Instant::now() + METER_HOLDS);
+                        }
                         Some(Step::Cycle(index)) => {
                             let views = state
                                 .config
@@ -614,7 +629,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             }
         }
 
-        if moving && Instant::now() >= next_frame {
+        if moving && meter.is_none() && Instant::now() >= next_frame {
             // Advance by whole intervals so the clock keeps its rate; if a slow
             // iteration put us past several, drop them rather than catch up in
             // a burst.
@@ -651,9 +666,18 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             }
         }
 
+        if let Some(until) = meter {
+            if Instant::now() >= until {
+                meter = None;
+                paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
+                painted_at = Instant::now();
+                tau = 0.0;
+            }
+        }
+
         // Outside the frame tick on purpose: a number arriving must not have
         // to wait for an animation clock that a still scene never starts.
-        if trying.is_none() {
+        if trying.is_none() && meter.is_none() {
             refresh(&device, state, &active, page, display_keys)?;
         }
 
@@ -1110,6 +1134,35 @@ fn paint_canvas(
     Ok(())
 }
 
+/// Shows the output level across the whole dock, briefly.
+fn paint_meter(device: &Ajazz, found: &device::Found, sound: pult::sound::Sound) -> Result<()> {
+    let (rows, cols) = found.kind.key_layout();
+    let (key, _) = found.kind.key_image_format().size;
+
+    // Packed, not physical. A quarter of a physical canvas lies under the
+    // plastic, so a level that crossed a seam would move a long way without
+    // the picture changing and then jump. Packed is every visible pixel and
+    // nothing else, which is what "a travelling front at constant speed" is
+    // for: one percent of volume moves the edge by the same amount wherever
+    // it is.
+    let mut canvas = Canvas::new(canvas::Mapping::Packed, cols as u32, rows as u32, key as u32);
+    canvas::meter(
+        &mut canvas,
+        sound.level,
+        sound.muted,
+        image::Rgb([77, 163, 255]),
+        image::Rgb([10, 12, 16]),
+    );
+
+    for index in 0..canvas.keys().min(found.kind.display_key_count() as u32) {
+        device
+            .set_button_image(index as u8, image::DynamicImage::ImageRgb8(canvas.tile(index)))
+            .with_context(|| format!("sending meter tile {index}"))?;
+    }
+    device.flush().context("flushing the meter")?;
+    Ok(())
+}
+
 /// The surface the dock is currently painting, if it is painting one at all.
 ///
 /// A trial wins over the scene: while the editor is trying something out, that
@@ -1344,6 +1397,8 @@ fn redraw(
 /// What a key press asks the daemon to do next.
 enum Step {
     Scene(String),
+    /// The output changed; show it.
+    Sound(pult::sound::Sound),
     Page(usize),
     /// A readout was pressed: show its next reading.
     Cycle(u8),
@@ -1415,6 +1470,7 @@ fn handle(
                     let pages = scene.pages(per_page);
                     Ok(Some(Step::Page(turn.apply(page, pages))))
                 }
+                Ok(Outcome::Sound(sound)) => Ok(Some(Step::Sound(sound))),
                 Ok(Outcome::Scrub(hour)) => Ok(Some(Step::Scrub(hour))),
                 Ok(Outcome::Nothing) => Ok(None),
                 // A failed action is the user's problem to fix, not a reason to quit.

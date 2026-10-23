@@ -10,6 +10,8 @@ use crate::config::{Action, Hour, Mute, Page};
 /// side effect.
 pub enum Outcome {
     Nothing,
+    /// The output changed, and the dock should say so.
+    Sound(crate::sound::Sound),
     SwitchScene(String),
     TurnPage(Turn),
     /// Move the whole scene through the forecast.
@@ -87,13 +89,16 @@ pub fn run(action: &Action) -> Result<Outcome> {
     }
 
     if let Some(delta) = action.volume {
-        change_volume(delta)?;
-        return Ok(Outcome::Nothing);
+        return Ok(Outcome::Sound(crate::sound::nudge(delta)?));
     }
 
     if let Some(mute) = action.mute {
-        set_mute(mute)?;
-        return Ok(Outcome::Nothing);
+        let which = match mute {
+            Mute::Toggle => crate::sound::Which::Toggle,
+            Mute::On => crate::sound::Which::On,
+            Mute::Off => crate::sound::Which::Off,
+        };
+        return Ok(Outcome::Sound(crate::sound::silence(which)?));
     }
 
     if let Some(scene) = &action.scene {
@@ -215,36 +220,6 @@ fn key_code(key: &str) -> Option<u16> {
 }
 
 /// Nudges output volume, clamped by macOS itself to 0-100.
-fn change_volume(delta: i32) -> Result<()> {
-    let script = format!(
-        "set current to output volume of (get volume settings)\n\
-         set target to current + ({delta})\n\
-         if target < 0 then set target to 0\n\
-         if target > 100 then set target to 100\n\
-         set volume output volume target"
-    );
-    osascript(&script).context("changing volume")
-}
-
-/// Silences the output, or lets it speak again.
-///
-/// Through the same route as the volume, which asks macOS to set a value and
-/// needs no permission at all. The alternative is pressing F10 for somebody,
-/// which needs the right to send keystrokes and then depends on whether their
-/// function keys are set up as function keys.
-fn set_mute(mute: Mute) -> Result<()> {
-    let script = match mute {
-        Mute::Toggle => {
-            "set muted to output muted of (get volume settings)\n\
-             set volume output muted (not muted)"
-                .to_string()
-        }
-        Mute::On => "set volume output muted true".to_string(),
-        Mute::Off => "set volume output muted false".to_string(),
-    };
-    osascript(&script).context("setting mute")
-}
-
 fn osascript(script: &str) -> Result<()> {
     let output = Command::new("/usr/bin/osascript")
         .arg("-e")

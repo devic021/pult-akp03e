@@ -329,6 +329,34 @@ pub(crate) fn mix(a: Rgb<u8>, b: Rgb<u8>, u: f32) -> Rgb<u8> {
     ])
 }
 
+/// The output volume, across the whole dock.
+///
+/// The whole height, filled from the left, rather than a bar through the
+/// middle. A band drawn across the centre lands exactly on the horizontal
+/// seam and arrives as two separate strips, one at the foot of the top row
+/// and one at the head of the bottom: the picture says "two" when it means
+/// "one". Filling every key to its full height leaves nothing for a seam to
+/// cut, and reads from across a room.
+///
+/// Muted is not drawn as an empty dock. An empty dock and a volume of zero
+/// are the same picture and are not the same thing, so the level stays where
+/// it is and dims: what you are turning back to is still visible.
+pub fn meter(canvas: &mut Canvas, level: f32, muted: bool, tint: Rgb<u8>, background: Rgb<u8>) {
+    canvas.fill(background);
+
+    let filled = canvas.width() as f32 * level.clamp(0.0, 1.0);
+    let (lit, rest) = if muted { (0.34, 0.10) } else { (0.92, 0.16) };
+
+    for y in 0..canvas.height() as i32 {
+        for x in 0..canvas.width() as i32 {
+            // Fractional at the leading edge: snapped to whole pixels the
+            // edge would stand still through most of a slow turn.
+            let coverage = (filled - x as f32).clamp(0.0, 1.0);
+            canvas.blend(x, y, tint, rest + (lit - rest) * coverage);
+        }
+    }
+}
+
 /// What the canvas does over time.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

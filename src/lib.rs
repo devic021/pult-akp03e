@@ -16,4 +16,5 @@ pub mod idle;
 pub mod permissions;
 pub mod power;
 pub mod render;
+pub mod sound;
 pub mod values;
