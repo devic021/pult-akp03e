@@ -120,3 +120,54 @@ final class Locator: NSObject, ObservableObject, CLLocationManagerDelegate {
         finish(attempt, problem: error.localizedDescription)
     }
 }
+
+/// Turns coordinates into the name of a place.
+///
+/// `44.991, 20.158` is exact and tells you nothing; "Stara Pazova" is the only
+/// form in which a wrong position is obvious at a glance. The name is read
+/// once and never saved or sent anywhere — the daemon goes on knowing only the
+/// two numbers.
+///
+/// Asked again only when the coordinates actually change: the pane refreshes
+/// every few seconds, and geocoding on every pass would be a request a second
+/// for an answer that has not moved.
+final class PlaceName: ObservableObject {
+    @Published private(set) var name: String?
+
+    private let geocoder = CLGeocoder()
+    /// The coordinates `name` belongs to, so a late reply cannot land on a
+    /// position somebody has since changed.
+    private var resolved: String?
+
+    func resolve(latitude: Double, longitude: Double) {
+        let key = String(format: "%.3f,%.3f", latitude, longitude)
+        guard key != resolved else { return }
+        resolved = key
+        name = nil
+
+        geocoder.cancelGeocode()
+        geocoder.reverseGeocodeLocation(
+            CLLocation(latitude: latitude, longitude: longitude)
+        ) { [weak self] marks, _ in
+            let mark = marks?.first
+            // Narrowest first: the town is the useful answer, and a country on
+            // its own is better than nothing when the sea is nearby.
+            let found = mark?.locality
+                ?? mark?.subAdministrativeArea
+                ?? mark?.administrativeArea
+                ?? mark?.country
+
+            DispatchQueue.main.async {
+                guard let self, self.resolved == key else { return }
+                self.name = found
+            }
+        }
+    }
+
+    /// Forgets the name, for when the coordinates have been cleared.
+    func clear() {
+        geocoder.cancelGeocode()
+        resolved = nil
+        name = nil
+    }
+}

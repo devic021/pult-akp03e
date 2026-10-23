@@ -32,6 +32,18 @@ pub struct Config {
     pub press_feedback: bool,
     /// Scene to fall back to when no scene claims the frontmost app.
     pub default: String,
+    /// One scene, held there whatever is in front.
+    ///
+    /// Absent means what the dock has always done: follow the frontmost
+    /// application. One optional field rather than a flag beside a name,
+    /// because a flag saying "fixed" next to an empty name is a state that
+    /// has to be given a meaning, and every meaning is a surprise to someone.
+    ///
+    /// It does not touch the screensaver. Resting when nobody is there is a
+    /// separate question with its own block, and folding the two together
+    /// would mean one switch quietly doing two things.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pinned: Option<String>,
     /// What the dock does when nobody has touched the Mac for a while.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub idle: Option<Idle>,
@@ -901,6 +913,12 @@ impl Config {
             bail!("default scene {:?} is not defined", self.default);
         }
 
+        if let Some(pinned) = &self.pinned {
+            if !self.scenes.contains_key(pinned) {
+                bail!("pinned scene {pinned:?} is not defined");
+            }
+        }
+
         if let Some(idle) = &self.idle {
             // The playlist is checked member by member and names the one that
             // is wrong: "idle playlist" on its own sends you reading the file.
@@ -1018,7 +1036,15 @@ impl Config {
     }
 
     /// Scene claiming `bundle_id`, or the default scene.
+    ///
+    /// A pinned scene wins over everything: that is what pinning is.
     pub fn scene_for(&self, bundle_id: Option<&str>) -> &str {
+        if let Some(pinned) = self.pinned.as_deref() {
+            if self.scenes.contains_key(pinned) {
+                return pinned;
+            }
+        }
+
         let Some(id) = bundle_id else {
             return &self.default;
         };
@@ -1336,6 +1362,33 @@ caption = "vazduh"
         let reported = config.missing_files();
         assert_eq!(reported.len(), 1, "{reported:?}");
         assert!(reported[0].contains("vazduh"), "{}", reported[0]);
+    }
+
+    #[test]
+    fn a_pinned_scene_wins_over_the_frontmost_application() {
+        let text = r#"
+default = "general"
+pinned = "Vreme"
+[scenes.general]
+[scenes.Vreme]
+[scenes.Chrome]
+apps = ["com.google.Chrome"]
+"#;
+        let mut config: Config = toml::from_str(text).expect("parses");
+        config.validate().expect("validates");
+
+        assert_eq!(config.scene_for(Some("com.google.Chrome")), "Vreme");
+        assert_eq!(config.scene_for(None), "Vreme");
+
+        // Unpinned, it goes back to following what is in front.
+        config.pinned = None;
+        assert_eq!(config.scene_for(Some("com.google.Chrome")), "Chrome");
+        assert_eq!(config.scene_for(None), "general");
+
+        // A pin naming a scene that is not there is refused, the same way the
+        // default scene is: a dock pinned to nothing has no answer at all.
+        config.pinned = Some("Nema".into());
+        assert!(config.validate().is_err());
     }
 
     #[test]

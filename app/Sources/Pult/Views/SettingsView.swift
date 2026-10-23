@@ -73,6 +73,45 @@ struct SettingsView: View {
 
                 Section2(T("section.behaviour"), symbol: "slider.horizontal.3") {
                     ActionCard(
+                        T("settings.pinned"),
+                        symbol: "pin",
+                        detail: T("settings.pinned.help")
+                    ) {
+                        HStack(spacing: 8) {
+                            Picker("", selection: Binding(
+                                get: { state.config.pinned == nil ? 0 : 1 },
+                                set: { mode in
+                                    // Switching to "always" keeps whatever was
+                                    // pinned before, so turning it off and on
+                                    // again does not lose the choice.
+                                    state.config.pinned = mode == 0
+                                        ? nil
+                                        : (state.config.pinned ?? state.config.defaultScene)
+                                }
+                            )) {
+                                Text(T("settings.pinned.follow")).tag(0)
+                                Text(T("settings.pinned.fixed")).tag(1)
+                            }
+                            .labelsHidden()
+                            .pickerStyle(.segmented)
+                            .fixedSize()
+
+                            if state.config.pinned != nil {
+                                Picker("", selection: Binding(
+                                    get: { state.config.pinned ?? state.config.defaultScene },
+                                    set: { state.config.pinned = $0 }
+                                )) {
+                                    ForEach(state.config.sceneNames, id: \.self) { name in
+                                        Text(name).tag(name)
+                                    }
+                                }
+                                .labelsHidden()
+                                .fixedSize()
+                            }
+                        }
+                    }
+
+                    ActionCard(
                         T("settings.pressFeedback.short"),
                         symbol: "hand.tap",
                         detail: T("settings.pressFeedback.help")

@@ -576,12 +576,15 @@ struct Config: Codable, Equatable {
     var press_feedback: Bool = true
     var font: String?
     var defaultScene: String = "general"
+    /// One scene held on the dock whatever is in front. Absent means follow
+    /// the frontmost application, which is what the dock has always done.
+    var pinned: String?
     var scenes: [String: DeckScene] = [:]
     /// The screensaver. Absent means the dock never rests.
     var idle: Idle?
 
     enum CodingKeys: String, CodingKey {
-        case brightness, poll_ms, press_feedback, font, scenes, idle
+        case brightness, poll_ms, press_feedback, font, scenes, idle, pinned
         case defaultScene = "default"
     }
 
@@ -594,6 +597,7 @@ struct Config: Codable, Equatable {
         press_feedback = try values.decodeIfPresent(Bool.self, forKey: .press_feedback) ?? true
         font = try values.decodeIfPresent(String.self, forKey: .font)
         defaultScene = try values.decodeIfPresent(String.self, forKey: .defaultScene) ?? "general"
+        pinned = try values.decodeIfPresent(String.self, forKey: .pinned)
         scenes = try values.decodeIfPresent([String: DeckScene].self, forKey: .scenes) ?? [:]
         idle = try values.decodeIfPresent(Idle.self, forKey: .idle)
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Config.known) ?? [:]
@@ -604,6 +608,7 @@ struct Config: Codable, Equatable {
 
     private static let known: Set<String> = [
         "brightness", "poll_ms", "press_feedback", "font", "default", "scenes", "idle",
+        "pinned",
     ]
 
     func encode(to encoder: Encoder) throws {
@@ -613,6 +618,7 @@ struct Config: Codable, Equatable {
         try values.encode(press_feedback, forKey: .press_feedback)
         try values.encodeIfPresent(font, forKey: .font)
         try values.encode(defaultScene, forKey: .defaultScene)
+        try values.encodeIfPresent(pinned, forKey: .pinned)
         try values.encode(scenes, forKey: .scenes)
         try values.encodeIfPresent(idle, forKey: .idle)
         try encoder.encodeExtra(extra)

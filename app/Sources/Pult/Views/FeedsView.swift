@@ -10,6 +10,7 @@ struct FeedsView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var l10n: L10n
     @StateObject private var locator = Locator()
+    @StateObject private var placeName = PlaceName()
 
     @State private var lat = ""
     @State private var lon = ""
@@ -55,7 +56,7 @@ struct FeedsView: View {
     private var place: some View {
         Section2(T("section.place"), symbol: "location") {
             ActionCard(
-                T("feeds.place"),
+                placeName.name.map { "\(T("feeds.place")) \u{2014} \($0)" } ?? T("feeds.place"),
                 symbol: "mappin.and.ellipse",
                 detail: T("feeds.place.help")
             ) {
@@ -127,9 +128,22 @@ struct FeedsView: View {
     /// Takes the daemon's answer, unless something is being typed into the
     /// fields right now — overwriting a half-typed number is maddening.
     private func adoptPlaces() {
-        guard coordinates == nil || (lat.isEmpty && lon.isEmpty) else { return }
-        lat = state.feeds.places["lat"] ?? lat
-        lon = state.feeds.places["lon"] ?? lon
+        if coordinates == nil || (lat.isEmpty && lon.isEmpty) {
+            lat = state.feeds.places["lat"] ?? lat
+            lon = state.feeds.places["lon"] ?? lon
+        }
+
+        // Named from what the daemon is actually using, not from what is in
+        // the fields: a half-typed latitude would otherwise name a field in
+        // the Atlantic on its way to being a town.
+        guard
+            let latitude = Double(state.feeds.places["lat"] ?? ""),
+            let longitude = Double(state.feeds.places["lon"] ?? "")
+        else {
+            placeName.clear()
+            return
+        }
+        placeName.resolve(latitude: latitude, longitude: longitude)
     }
 
     // MARK: - The sources
