@@ -1,6 +1,6 @@
 [package]
 name = "pult"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Per-application scene switching for the Ajazz AKP03E stream dock on macOS"
 

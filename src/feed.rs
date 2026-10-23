@@ -1055,7 +1055,8 @@ mod tests {
         assert!(target.contains("timezone=Europe/Belgrade"), "{target}");
         assert!(target.contains("b=2"), "the rest of the query survives");
 
-        // A shell feed has no query to put them in, so they are left alone.
+        // A command has no query, so the same table arrives as long options.
+        // Its own braces are left alone: `jq '{a: .b}'` is not a placeholder.
         let shell = Feed {
             kind: FeedKind::Shell,
             run: Some("echo '{}'".into()),
@@ -1064,7 +1065,25 @@ mod tests {
                 .collect(),
             ..Feed::default()
         };
-        assert_eq!(shell.target(&BTreeMap::new()).unwrap(), "echo '{}'");
+        assert_eq!(
+            shell.target(&BTreeMap::new()).unwrap(),
+            "echo '{}' --temperature-unit 'celsius'"
+        );
+
+        // A value carrying a quote cannot be allowed to end the quoting and
+        // become arguments of its own.
+        let risky = Feed {
+            kind: FeedKind::Shell,
+            run: Some("say".into()),
+            params: [("unit".to_string(), "it's; rm -rf /".to_string())]
+                .into_iter()
+                .collect(),
+            ..Feed::default()
+        };
+        let line = risky.target(&BTreeMap::new()).unwrap();
+        assert!(line.starts_with("say --unit '"), "{line}");
+        assert!(line.ends_with("'"), "{line}");
+        assert!(!line.contains("'; rm"), "the quoting held: {line}");
     }
 
     #[test]
@@ -1093,13 +1112,28 @@ mod tests {
 
     #[test]
     fn every_offered_parameter_names_its_choices() {
-        for (name, options) in known_params() {
-            assert!(!name.is_empty());
+        for known in known_params() {
+            assert!(!known.name.is_empty());
             // Free text is allowed, but a half-filled list is a picker with a
             // missing option, which is worse than a text field.
-            if !options.is_empty() {
-                assert!(options.len() >= 2, "{name} offers only {options:?}");
+            if !known.options.is_empty() {
+                assert!(
+                    known.options.len() >= 2,
+                    "{} offers only {:?}",
+                    known.name,
+                    known.options
+                );
             }
+        }
+
+        // Every kind a feed can be must have something to offer, or the
+        // panel for that kind is an empty box with a heading over it.
+        for kind in [FeedKind::Http, FeedKind::Shell] {
+            assert!(
+                known_params().iter().any(|known| known.kind == kind),
+                "nothing offered for {kind:?}"
+            );
+            assert!(!intervals(kind).is_empty(), "no intervals for {kind:?}");
         }
     }
 
