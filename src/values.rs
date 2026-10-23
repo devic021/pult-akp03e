@@ -591,10 +591,15 @@ fn bytes(value: f64) -> String {
     fixed(value, 0)
 }
 
-/// A span, at most five glyphs: `2h14`, `47m`, `20s`.
+/// A span, at most five glyphs: `17d`, `2h14`, `47m`, `20s`.
+///
+/// Past a day it drops to whole days. An uptime of seventeen days reads as
+/// `408h53` otherwise, which is arithmetic rather than an answer.
 fn hm(seconds: i64) -> String {
     let seconds = seconds.max(0);
-    if seconds >= 3600 {
+    if seconds >= 86_400 {
+        format!("{}d", seconds / 86_400)
+    } else if seconds >= 3600 {
         format!("{}h{:02}", seconds / 3600, (seconds % 3600) / 60)
     } else if seconds >= 60 {
         format!("{}m", seconds / 60)
@@ -882,6 +887,8 @@ mod tests {
         assert_eq!(bytes(16.0 * 1024.0 * 1024.0 * 1024.0), "16G");
         assert_eq!(hm(8_040), "2h14");
         assert_eq!(hm(2_820), "47m");
+        assert_eq!(hm(1_471_994), "17d", "an uptime, not 408h53");
+        assert_eq!(hm(86_399), "23h59", "and not a day until it is one");
         assert_eq!(ago(172_800), "2d");
         assert_eq!(clip("Preuzimanje", 4), "Preu");
 

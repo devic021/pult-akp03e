@@ -465,6 +465,7 @@ dependencies = [
  "core-foundation",
  "hidapi",
  "image",
+ "libc",
  "resvg",
  "serde",
  "serde_json",

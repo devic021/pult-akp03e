@@ -77,6 +77,10 @@ touch "$DIST/.metadata_never_index"
 
 cp "app/.build/$PROFILE/Pult" "$APP/Contents/MacOS/Pult"
 cp "target/$PROFILE/pultd" "$APP/Contents/MacOS/pultd"
+# The vitals helper rides along beside the daemon. A shell feed names it as
+# {bin}/vitals, which the daemon fills in from its own path, so the app works
+# wherever it has been dragged.
+cp "target/$PROFILE/vitals" "$APP/Contents/MacOS/vitals"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
 # The interface is set in Inter, registered from here at launch.
@@ -159,6 +163,8 @@ fi
 # container's seal.
 # The daemon carries its own identifier: that identifier is half of the
 # requirement macOS remembers when you allow it to send keystrokes.
+codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.vitals \
+	"$APP/Contents/MacOS/vitals"
 codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.daemon \
 	"$APP/Contents/MacOS/pultd"
 codesign --force --sign "$CERT_NAME" $SIGN_FLAGS --identifier dev.pult.Pult \

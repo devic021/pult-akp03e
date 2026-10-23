@@ -12,6 +12,10 @@ path = "src/lib.rs"
 name = "pultd"
 path = "src/main.rs"
 
+[[bin]]
+name = "vitals"
+path = "src/bin/vitals.rs"
+
 [dependencies]
 ajazz-sdk = { path = "vendor/ajazz-sdk" }
 hidapi = "2.6"
@@ -29,6 +33,9 @@ serde = { version = "1.0.229", default-features = false, features = ["derive", "
 toml = "1.1.8"
 ab_glyph = "0.2.32"
 core-foundation = "0.10.1"
+# Already in the lock file by way of hidapi; named here so the vitals helper
+# can ask the kernel directly instead of spawning a process per reading.
+libc = "0.2"
 resvg = "0.48.1"
 serde_json = "1.0.154"
 base64 = "0.23.1"

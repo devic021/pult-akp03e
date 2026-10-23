@@ -32,8 +32,12 @@ const LABEL_SIZES: &[f32] = &[18.0, 16.0, 14.0, 12.0, 11.0, 10.0, 9.0];
 /// comfortable glyphs at 34 px ("12°" measures 52) and five at 20 ("15:21"
 /// measures 50). Six never fit, which is why `%` lives in the caption.
 const VALUE_SIZES: &[f32] = &[34.0, 30.0, 26.0, 22.0, 20.0, 18.0];
-/// The line under a reading, saying what the reading is.
-const CAPTION_SIZE: f32 = 10.0;
+/// Sizes the line under a reading is tried at, largest first.
+///
+/// It shrinks rather than wraps or clips: a caption is two or three words and
+/// a second line would eat the number, while "GB slobodno" cut to "GB slobodn"
+/// looks like the dock gave up halfway.
+const CAPTION_SIZES: &[f32] = &[10.0, 9.0, 8.0, 7.0];
 /// Height reserved for that line, icon included.
 const CAPTION_BAND: i32 = 13;
 /// The icon beside a caption. Small on purpose: on a readout the number is the
@@ -379,14 +383,20 @@ impl Renderer {
         color: Rgb<u8>,
     ) -> Result<()> {
         let (w, h) = (canvas.width() as i32, canvas.height() as i32);
-        let scale = PxScale::from(CAPTION_SIZE);
-        let text_width = self.width(&readout.caption, scale);
 
         let icon_width = match &readout.icon {
             Some(_) if !readout.caption.is_empty() => CAPTION_ICON as i32 + 2,
             Some(_) => CAPTION_ICON as i32,
             None => 0,
         };
+
+        let room = w as f32 - 2.0 * MARGIN as f32 - icon_width as f32;
+        let scale = CAPTION_SIZES
+            .iter()
+            .map(|size| PxScale::from(*size))
+            .find(|scale| self.width(&readout.caption, *scale) <= room)
+            .unwrap_or_else(|| PxScale::from(*CAPTION_SIZES.last().unwrap()));
+        let text_width = self.width(&readout.caption, scale);
         let total = icon_width as f32 + text_width;
         let mut x = ((w as f32 - total) / 2.0).max(MARGIN as f32);
         let top = h - band;

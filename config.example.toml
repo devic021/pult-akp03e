@@ -736,7 +736,7 @@ map = { aqi = "/current/european_aqi", pm25 = "/current/pm2_5", pm10 = "/current
 # ------------------------------------------------------------------- vreme ---
 # Six readings, each with more behind it than it shows. Reach it with
 # `scene = "vreme"` on any key, or from a knob.
-[scenes.vreme]
+[scenes.Vreme]
 
 keys = [
   # The background is the temperature as much as the number is.
@@ -846,3 +846,93 @@ buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "
 [scenes.uspravno.surface]
 kind = "canvas"
 source = "~/.config/pult/uspravno.gif"
+
+# ====================================================================== masina
+# What this Mac is doing to itself. A `shell` feed: the helper beside the
+# daemon prints one line of JSON and exits.
+#
+# Nothing here needs permission and nothing needs root. The thermal sensors in
+# particular were worth measuring rather than assuming: `powermetrics` does
+# need root, and the usual advice is to install a privileged helper for it, but
+# on this hardware the sensors arrive as HID events any process can read. The
+# calls that read them are not public API, which is exactly why they live in a
+# separate short-lived process: if a future macOS moves them, the cost is one
+# failed poll and a blank key, not a dock that stops answering.
+#
+# `{bin}` is where this copy of Pult lives, filled in by the daemon.
+
+[feeds.masina]
+kind = "shell"
+run = "{bin}/vitals"
+every = "10s"
+stale_after = "2m"
+require = ["/cpu/cores"]
+
+[feeds.masina.map]
+cpu       = "/cpu/busy"
+load      = "/cpu/load"
+per_core  = "/cpu/per_core"
+cores     = "/cpu/cores"
+temp      = "/temperature/soc"
+temp_mean = "/temperature/soc_mean"
+temp_batt = "/temperature/battery"
+mem       = "/memory/used_percent"
+mem_used  = "/memory/used_gb"
+mem_free  = "/memory/free_gb"
+batt      = "/battery/percent"
+batt_min  = "/battery/minutes"
+disk      = "/disk/free_gb"
+disk_used = "/disk/used_percent"
+uptime    = "/uptime/seconds"
+
+# ------------------------------------------------------------------ masina ---
+[scenes."Mašina"]
+
+keys = [
+  { value = "{masina.cpu|round}", caption = "% CPU", icon = "cpu",
+    ramp = { field = "masina.cpu", stops = [[0, "#1a7f37"], [50, "#9a6700"], [85, "#d93025"]] },
+    cycle = [
+      { value = "{masina.load|round1}", caption = "opterećenje", icon = "activity" },
+      { value = "{masina.cores|round}", caption = "jezgara", icon = "microchip" },
+    ] },
+
+  { value = "{masina.temp|round}°", caption = "SoC", icon = "thermometer",
+    ramp = { field = "masina.temp", stops = [[30, "#1a7f37"], [60, "#9a6700"], [85, "#d93025"]] },
+    cycle = [
+      { value = "{masina.temp_mean|round}°", caption = "prosek jezgara" },
+      { value = "{masina.temp_batt|round}°", caption = "baterija", icon = "battery" },
+    ] },
+
+  { value = "{masina.mem|round}", caption = "% RAM", icon = "memory-stick",
+    ramp = { field = "masina.mem", stops = [[0, "#1a7f37"], [70, "#9a6700"], [90, "#d93025"]] },
+    cycle = [
+      { value = "{masina.mem_used|round}", caption = "GB u upotrebi" },
+      { value = "{masina.mem_free|round}", caption = "GB slobodno" },
+    ] },
+
+  { value = "{masina.batt|round}", caption = "% baterije", icon = "battery",
+    ramp = { field = "masina.batt", stops = [[10, "#d93025"], [30, "#9a6700"], [60, "#1a7f37"]] },
+    cycle = [
+      { value = "{masina.batt_min|dur}", caption = "preostalo", icon = "battery-charging" },
+      { value = "{masina.temp_batt|round}°", caption = "temperatura" },
+    ] },
+
+  { value = "{masina.disk|round}", caption = "GB slobodno", icon = "hard-drive", color = "#30363d",
+    cycle = [
+      { value = "{masina.disk_used|round}", caption = "% zauzeto" },
+    ] },
+
+  { value = "{masina.uptime|dur}", caption = "radi", icon = "timer", color = "#6e40c9" },
+]
+
+buttons = [
+  { scene = "Početna" },
+  { shortcut = "cmd+shift+4" },
+  { shortcut = "ctrl+up" },
+]
+
+encoders = [
+  { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
+  { cw = { scene = "Vreme" }, ccw = { scene = "Početna" } },
+  { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
+]

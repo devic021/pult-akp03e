@@ -273,6 +273,18 @@ pub fn write_places(values: &BTreeMap<String, String>) -> Result<PathBuf> {
 pub fn places() -> BTreeMap<String, String> {
     let mut places = BTreeMap::new();
 
+    // Where this copy of Pult lives, so a shipped feed can name a helper
+    // beside the daemon without knowing whether the app sits in
+    // /Applications, on a disk image, or in somebody's build directory.
+    // Set before anything can return early: a feed that reads this machine
+    // needs it whether or not anyone has said where the machine is.
+    if let Some(dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(std::path::Path::to_path_buf))
+    {
+        places.insert("bin".to_string(), dir.display().to_string());
+    }
+
     let Some(path) = place_path() else {
         return places;
     };
