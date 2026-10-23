@@ -85,15 +85,21 @@ struct FeedStatus: Decodable, Identifiable, Equatable {
 struct KnownParam: Decodable, Identifiable, Equatable {
     let name: String
     let options: [String]
+    /// Which kind of source this applies to. A URL takes parameters as query
+    /// and a command takes them as arguments, and offering a weather host's
+    /// wind units on a source that reads this machine is a control that
+    /// provably does nothing.
+    let kind: String
 
-    var id: String { name }
+    var id: String { "\(kind).\(name)" }
 
-    enum CodingKeys: String, CodingKey { case name, options }
+    enum CodingKeys: String, CodingKey { case name, options, kind }
 
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         name = try values.decode(String.self, forKey: .name)
         options = try values.decodeIfPresent([String].self, forKey: .options) ?? []
+        kind = try values.decodeIfPresent(String.self, forKey: .kind) ?? "http"
     }
 
     /// The name on the row, translated where we have it.

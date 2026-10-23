@@ -120,7 +120,12 @@ impl Feed {
         match self.kind {
             FeedKind::Shell => {
                 let run = self.run.as_deref().context("a shell feed needs a run")?;
-                Ok(fill(run, places))
+                let filled = fill(run, places);
+                if self.params.is_empty() {
+                    Ok(filled)
+                } else {
+                    Ok(with_arguments(&filled, &self.params))
+                }
             }
             FeedKind::Http => {
                 let url = self.url.as_deref().context("an http feed needs a url")?;
@@ -345,6 +350,24 @@ fn with_params(url: &str, params: &BTreeMap<String, String>) -> String {
     }
 }
 
+/// Puts `params` on a command line as long options.
+///
+/// `temperature_unit = "fahrenheit"` becomes `--temperature-unit fahrenheit`,
+/// so one table means the same thing whether the feed is a URL or a command.
+/// Quoted, because a value is somebody's text and a space in it would
+/// otherwise become a second argument.
+fn with_arguments(run: &str, params: &BTreeMap<String, String>) -> String {
+    let mut line = run.to_string();
+    for (name, value) in params {
+        line.push_str(&format!(
+            " --{} '{}'",
+            name.replace('_', "-"),
+            value.replace('\'', "'\\''")
+        ));
+    }
+    line
+}
+
 /// The parameters this runtime knows how to offer as a control, and what each
 /// one may be set to.
 ///
@@ -352,13 +375,48 @@ fn with_params(url: &str, params: &BTreeMap<String, String>) -> String {
 /// pickers hard-coded in Swift outlives the daemon it was written against, and
 /// the first thing a drifted copy does is offer a choice nothing reads. An
 /// empty `options` means the value is free text.
-pub fn known_params() -> &'static [(&'static str, &'static [&'static str])] {
+pub fn known_params() -> &'static [Known] {
     &[
-        ("temperature_unit", &["celsius", "fahrenheit"]),
-        ("wind_speed_unit", &["kmh", "ms", "mph", "kn"]),
-        ("precipitation_unit", &["mm", "inch"]),
-        ("timezone", &[]),
+        Known {
+            name: "temperature_unit",
+            options: &["celsius", "fahrenheit"],
+            kind: FeedKind::Http,
+        },
+        Known {
+            name: "wind_speed_unit",
+            options: &["kmh", "ms", "mph", "kn"],
+            kind: FeedKind::Http,
+        },
+        Known {
+            name: "precipitation_unit",
+            options: &["mm", "inch"],
+            kind: FeedKind::Http,
+        },
+        Known {
+            name: "timezone",
+            options: &[],
+            kind: FeedKind::Http,
+        },
+        // The shipped vitals helper reads this one. Same name as the weather's
+        // on purpose: it means the same thing, so it reads the same in the
+        // interface and is one word to learn rather than two.
+        Known {
+            name: "temperature_unit",
+            options: &["celsius", "fahrenheit"],
+            kind: FeedKind::Shell,
+        },
     ]
+}
+
+/// One parameter the daemon knows how to offer, and where it applies.
+///
+/// The kind matters: a URL takes them as query, a command takes them as
+/// arguments, and offering a weather host's wind units on a feed that reads
+/// this machine is a control that provably does nothing.
+pub struct Known {
+    pub name: &'static str,
+    pub options: &'static [&'static str],
+    pub kind: FeedKind,
 }
 
 /// Fetches and extracts once.

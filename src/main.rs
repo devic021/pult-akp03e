@@ -1839,7 +1839,13 @@ fn serve(
                 // was written against, and then offers a choice nothing reads.
                 "known": feed::known_params()
                     .iter()
-                    .map(|(name, options)| json!({ "name": name, "options": options }))
+                    .map(|known| {
+                        json!({
+                            "name": known.name,
+                            "options": known.options,
+                            "kind": known.kind,
+                        })
+                    })
                     .collect::<Vec<_>>(),
                 // Where the readings are being asked for, so the app can tell
                 // the difference between "no coordinates yet" and "the host is

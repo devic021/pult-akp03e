@@ -374,11 +374,20 @@ private struct FeedCard: View {
                 .fixedSize()
             }
 
-            let offered = known.filter { !$0.options.isEmpty }
+            let offered = known.filter { !$0.options.isEmpty && $0.kind == feed.kind }
             if !offered.isEmpty {
-                Text(T("feeds.params"))
-                    .font(.appCaption)
-                    .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(T("feeds.params"))
+                        .font(.appCaption)
+                        .foregroundStyle(.secondary)
+                    // Said here because it is the moment it matters. A ramp's
+                    // stops are plain numbers: change the unit and 30 stops
+                    // meaning "warm".
+                    Text(T("feeds.params.ramps"))
+                        .font(.appCaption)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 ForEach(offered) { param in
                     HStack(spacing: 10) {

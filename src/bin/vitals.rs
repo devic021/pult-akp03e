@@ -1,6 +1,6 @@
 //! What this Mac is doing to itself, as one line of JSON.
 //!
-//!   vitals
+//!   vitals [--temperature-unit celsius|fahrenheit]
 //!
 //! A process of its own, run by a `kind = "shell"` feed, and that is the
 //! point. Reading the thermal sensors needs calls that are not public API, and
@@ -23,7 +23,25 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use serde_json::{json, Value};
 
+/// Degrees as the caller asked for them.
+///
+/// Converted here rather than by a formatter on the key, so that a ramp set in
+/// degrees colours by the same numbers the key shows. A ramp built for 30-85
+/// Celsius would otherwise read every Fahrenheit value as scalding.
+fn degrees(celsius: f64, fahrenheit: bool) -> f64 {
+    if fahrenheit {
+        celsius * 9.0 / 5.0 + 32.0
+    } else {
+        celsius
+    }
+}
+
 fn main() {
+    let fahrenheit = std::env::args()
+        .skip_while(|argument| argument != "--temperature-unit")
+        .nth(1)
+        .is_some_and(|unit| unit.eq_ignore_ascii_case("fahrenheit"));
+
     // Every reading is optional. A Mac with no battery is a Mac Mini, not a
     // failure, and one sensor the kernel will not talk about must not take the
     // other five with it.
@@ -31,7 +49,7 @@ fn main() {
         "cpu": cpu(),
         "memory": memory(),
         "battery": battery(),
-        "temperature": temperature(),
+        "temperature": temperature(fahrenheit),
         "disk": disk(),
         "uptime": uptime(),
     });
@@ -238,7 +256,7 @@ fn battery() -> Value {
 /// `tdie*` are the SoC's own dies; `tcal` is a calibration reference that sits
 /// several degrees above all of them and is not a hotspot, so counting it
 /// would report a Mac as hotter than it is, permanently.
-fn temperature() -> Value {
+fn temperature(fahrenheit: bool) -> Value {
     let mut dies: Vec<f64> = Vec::new();
     let mut battery: Option<f64> = None;
 
@@ -253,17 +271,18 @@ fn temperature() -> Value {
         }
     }
 
-    let mut out = json!({});
+    let round = |celsius: f64| (degrees(celsius, fahrenheit) * 10.0).round() / 10.0;
+
+    let mut out = json!({ "unit": if fahrenheit { "fahrenheit" } else { "celsius" } });
     if let Some(hottest) = dies.iter().copied().fold(None, |a: Option<f64>, b| {
         Some(a.map_or(b, |a| a.max(b)))
     }) {
-        out["soc"] = json!((hottest * 10.0).round() / 10.0);
-        let mean = dies.iter().sum::<f64>() / dies.len() as f64;
-        out["soc_mean"] = json!((mean * 10.0).round() / 10.0);
+        out["soc"] = json!(round(hottest));
+        out["soc_mean"] = json!(round(dies.iter().sum::<f64>() / dies.len() as f64));
         out["sensors"] = json!(dies.len());
     }
     if let Some(battery) = battery {
-        out["battery"] = json!((battery * 10.0).round() / 10.0);
+        out["battery"] = json!(round(battery));
     }
     out
 }
