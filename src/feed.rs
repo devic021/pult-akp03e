@@ -263,7 +263,7 @@ pub fn write_places(values: &BTreeMap<String, String>) -> Result<PathBuf> {
     for (name, value) in values {
         // Quoted whatever it is: a number read back as a string substitutes
         // the same, and quoting means a name nobody anticipated still works.
-        text.push_str(&format!("{name} = {:?}\n", value));
+        text.push_str(&format!("{name} = {value:?}\n"));
     }
 
     std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;

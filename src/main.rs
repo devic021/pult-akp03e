@@ -1159,32 +1159,10 @@ fn paint_meter(
     // are the same bar. The glyph says on or off and cannot say how loud.
     // Drawing both at once was tried, and six speakers swamp a thin bar.
     if silence {
-        canvas.fill(background);
-        let glyph = if sound.muted { "volume-x" } else { "volume-2" };
-        // Once per key. A single big one centred on the dock would sit
-        // exactly on the seam cross and lose its middle; one inside a key is
-        // whole, and six of them read from anywhere in the room.
-        if let Ok(sprite) =
-            pult::render::sprite(glyph, key as u32 * 3 / 4, image::Rgb([255, 255, 255]))
-        {
-            for index in 0..canvas.keys() {
-                let (ox, oy) = canvas.origin(index);
-                let inset = (key as u32).saturating_sub(sprite.width()) / 2;
-                for (x, y, pixel) in sprite.enumerate_pixels() {
-                    let alpha = f32::from(pixel[3]) / 255.0;
-                    if alpha > 0.0 {
-                        canvas.blend(
-                            (ox + inset + x) as i32,
-                            (oy + inset + y) as i32,
-                            image::Rgb([pixel[0], pixel[1], pixel[2]]),
-                            // Let go reads brighter than silenced, so the two
-                            // are told apart before the glyph is even read.
-                            alpha * if sound.muted { 0.55 } else { 0.95 },
-                        );
-                    }
-                }
-            }
-        }
+        // Physical here, not packed. This is a shape, and a shape keeps its
+        // proportions only when the gaps it crosses are part of the geometry.
+        canvas = Canvas::new(canvas::Mapping::Physical, cols as u32, rows as u32, key as u32);
+        canvas::sound(&mut canvas, sound.muted, background);
     } else {
         canvas::meter(&mut canvas, sound.level, sound.muted, tint, background);
     }

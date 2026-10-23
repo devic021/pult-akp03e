@@ -329,6 +329,79 @@ pub(crate) fn mix(a: Rgb<u8>, b: Rgb<u8>, u: f32) -> Rgb<u8> {
     ])
 }
 
+/// Whether there is any sound, as one picture across the whole dock.
+///
+/// Drawn as filled shapes rather than as a bundled icon scaled up, and that is
+/// the whole of it. The plastic between two screens is 16 px; a line icon at
+/// this size carries 10 px strokes, so the seam cuts every one of them and the
+/// cross of a mute glyph arrives as four separate petals. Every part of this
+/// is wider than the gap, so the gap only ever crosses it.
+///
+/// Muted is the same speaker struck through, not a different drawing: the eye
+/// finds the slash first and the speaker says what was struck.
+pub fn sound(canvas: &mut Canvas, muted: bool, background: Rgb<u8>) {
+    canvas.fill(background);
+
+    let (w, h) = (canvas.width() as f32, canvas.height() as f32);
+    let cy = h / 2.0;
+    let body = if muted {
+        Rgb([150, 150, 155])
+    } else {
+        Rgb([245, 245, 245])
+    };
+    let weight = if muted { 0.75 } else { 0.95 };
+
+    // The driver and the cone, as one run of half-heights.
+    let (x0, x1, x2) = (0.217 * w, 0.396 * w, 0.708 * w);
+    let (box_half, cone_half) = (0.169 * h, 0.434 * h);
+    for y in 0..canvas.height() as i32 {
+        for x in 0..canvas.width() as i32 {
+            let (fx, fy) = (x as f32, y as f32);
+            let half = if (x0..x1).contains(&fx) {
+                box_half
+            } else if (x1..=x2).contains(&fx) {
+                box_half + (cone_half - box_half) * ((fx - x1) / (x2 - x1))
+            } else {
+                continue;
+            };
+            if (fy - cy).abs() <= half {
+                canvas.blend(x, y, body, weight);
+            }
+        }
+    }
+
+    if muted {
+        // Corner to corner, thicker than the plastic by half again.
+        let half = 0.096 * h.min(w);
+        for y in 0..canvas.height() as i32 {
+            for x in 0..canvas.width() as i32 {
+                let off = ((x as f32 / w) - (1.0 - y as f32 / h)).abs() * w.min(h);
+                let edge = (half - off).clamp(0.0, 1.0);
+                if edge > 0.0 {
+                    canvas.blend(x, y, Rgb([255, 90, 80]), 0.95 * edge);
+                }
+            }
+        }
+        return;
+    }
+
+    // One wave, thick enough to survive the gap it crosses.
+    let (cx, radius, thickness) = (0.708 * w, 0.217 * w, 0.147 * h);
+    for y in 0..canvas.height() as i32 {
+        for x in 0..canvas.width() as i32 {
+            let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+            if dx < 0.03 * w {
+                continue;
+            }
+            let distance = (dx * dx + dy * dy).sqrt();
+            let edge = (thickness / 2.0 - (distance - radius).abs()).clamp(0.0, 1.0);
+            if edge > 0.0 {
+                canvas.blend(x, y, body, weight * edge);
+            }
+        }
+    }
+}
+
 /// The output volume, across the whole dock.
 ///
 /// The whole height, filled from the left, rather than a bar through the

@@ -439,7 +439,7 @@ fn sysctl_boottime() -> Option<i64> {
             0,
         )
     };
-    (ok == 0).then_some(value.tv_sec as i64)
+    (ok == 0).then_some(value.tv_sec)
 }
 
 fn number(dictionary: &CFDictionary<CFString, CFType>, key: &str) -> Option<f64> {
