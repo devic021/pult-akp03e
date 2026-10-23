@@ -1,13 +1,16 @@
 # Pult
 
 A macOS app for the **Ajazz AKP03E** stream dock. The six keys follow whatever
-application is in front, and everything about them is editable without touching
-a configuration file.
+application is in front, or hold still and report something: the weather, or
+what this Mac is doing to itself. Everything about them is editable without
+touching a configuration file.
 
 ![The scene editor](assets/readme/scenes.png)
 
 ```
 macOS frontmost app  →  bundle ID  →  scene  →  6 × JPEG 60×60 + an action table
+                                        ↑
+                        or one scene, pinned, reading a source
 ```
 
 The dock stores nothing but its boot logo. Every scene lives on your Mac and is
@@ -61,10 +64,89 @@ from the knobs alone.
 | `scene` | Switch the dock to another scene |
 | `page` | Turn to the next or previous page |
 | `volume` | Raise or lower the system volume |
+| `mute` | Silence the output, or let it speak again |
 | `hour` | Walk a scene of readings through its forecast |
 
 Every key is drawn by the daemon and sent as a finished picture, so what the
 editor shows is what the dock shows: the preview is the same renderer.
+
+Turning the volume fills the whole dock from the left for a moment, and muting
+it draws a speaker across all six screens, struck through. macOS only draws its
+own overlay for a real key press, which would mean asking for the right to send
+keystrokes and a round trip for every detent of a knob; this is where your hand
+already is.
+
+## Live data
+
+![The sources pane](assets/readme/sources.png)
+
+A key can show a number that comes from somewhere else instead of a label. A
+source fetches JSON on a schedule; the key reads it back through a template:
+
+```toml
+value   = "{weather.temp|round}°"
+caption = "feels {weather.feels|round}°"
+ramp    = { field = "weather.temp", stops = [[-5, "#1f6feb"], [24, "#9a6700"]] }
+```
+
+The number is drawn as large as it measures: three glyphs comfortably, five at
+a push, six never, which is why a per cent sign belongs in the caption. Digits
+are given a common advance so a reading going from 11 to 12 does not shift
+under your eye. A missing value is an em dash, never a zero.
+
+**Pressing a readout changes what it shows** rather than firing an action.
+`cycle` lists the other readings behind it, and a press repaints that one key,
+which is 1.2 ms. A knob bound to `hour` walks the whole scene through a
+forecast and lets go after twenty seconds, so a dock left hours ahead cannot
+quietly show the wrong weather.
+
+When a host goes quiet the last number stays, dimmed, with its age in place of
+its caption. An old temperature is still information; a blank key is not.
+Staleness is per source, because two hosts fail separately.
+
+The Sources pane shows each one as a row: whether it is answering, how long
+ago, how often it is asked, and every field it brought back with its current
+value. Click a field to copy the template that shows it. Each row also carries
+what can be changed while you are looking at the dock, which is the interval
+and the units; the address and the field mapping are the shape of the source
+and live in the file.
+
+### The weather
+
+![The weather on the dock](assets/readme/dock-weather.png)
+
+The shipped example builds a weather page from two open hosts that need no key
+and no account, about 3 KB a poll: temperature on a cold-to-hot ramp, the
+chance of rain, wind with the arrow turned to the bearing, the sky as a glyph,
+the time to the next sun event, and the air quality.
+
+They need to know where you are, and that does **not** go in the configuration
+file: the app round-trips that file, copies it to `.bak` on every save, and
+people paste it into bug reports. Coordinates live in `~/Library/Application
+Support/Pult/place.toml`, which the Sources pane writes for you, rounded to
+about a hundred metres. You can type them in and grant nothing, or let macOS
+answer once.
+
+### The machine
+
+![The machine on the dock](assets/readme/dock-machine.png)
+
+A second page reads the Mac itself: processor busy share, memory the way
+Activity Monitor counts it, battery, disk, uptime, and the temperature of the
+hottest die.
+
+None of it needs permission and none of it needs root. That was worth
+measuring rather than accepting: `powermetrics` does need root, the SMC has no
+public API, and the usual advice is to install a privileged helper. On Apple
+silicon the thermal sensors arrive as HID events that any process can read.
+
+The calls that read them are not public API, so `vitals` is a process of its
+own, spawned by a `kind = "shell"` source and gone again. If a future macOS
+moves them, the cost is one failed poll and a blank key, not a dock that stops
+answering.
+
+Because it reads the machine it runs on rather than somebody else's host, it
+can be asked every second.
 
 ## The device
 
@@ -113,42 +195,6 @@ the Mac sleeps.
 Nothing here keeps the Mac awake. The dock asks to paint one last frame before
 sleep and then lets go.
 
-## Live data
-
-A key can show a number that comes from somewhere else instead of a label. A
-feed fetches JSON on a schedule; the key reads it back through a template:
-
-```toml
-value   = "{vreme.temp|round}°"
-caption = "oseća {vreme.feels|round}°"
-ramp    = { field = "vreme.temp", stops = [[-5, "#1f6feb"], [24, "#9a6700"]] }
-```
-
-The number is drawn as large as it measures, three glyphs comfortably, five at
-a push, six never, which is why a per cent sign belongs in the caption. Digits
-are given a common advance so a reading going from 11 to 12 does not shift
-under your eye. A missing value is an em dash, never a zero.
-
-**Pressing a readout changes what it shows** rather than firing an action: `cycle`
-lists the other readings behind it, and a press repaints that one key. A knob
-bound to `hour` moves the whole scene through the forecast and lets go after
-twenty seconds, so a dock left hours ahead cannot quietly show the wrong
-weather.
-
-When a host goes quiet the last number stays, dimmed, with its age in place of
-its caption. An old temperature is still information; a blank key is not.
-
-The shipped example builds a weather page from two open hosts that need no key
-and no account, about 3 KB a poll. They need to know where you are, and that
-does **not** go in the configuration file: the app round-trips that file, copies
-it to `.bak` on every save, and people paste it into bug reports. Coordinates
-live in `~/Library/Application Support/Pult/place.toml`, which the Feeds pane
-writes for you, rounded to about a hundred metres.
-
-The Feeds pane shows each source as a row, whether it is answering, how long
-ago, and every field it brought back with its current value. Clicking a field
-copies the template that shows it.
-
 ## Settings
 
 ![Settings](assets/readme/settings.png)
@@ -156,6 +202,11 @@ copies the template that shows it.
 Light, dark or follow the system. **English or Serbian**, switched live. A text
 size that scales the whole interface, not just the labels. How often the
 frontmost application is checked, and whether a press flashes on screen.
+
+**What the dock shows**: normally it follows whichever application is in front,
+but it can be pinned to one scene whatever you are doing, which is what the
+weather and the machine pages are for. The screensaver is a separate question
+and still applies.
 
 The background service can be restarted, stopped, set to start at login, or
 repaired if the app has been moved. The configuration can be revealed, exported
