@@ -650,17 +650,28 @@ struct Config: Codable, Equatable {
 
     /// Scenes an application claims.
     ///
-    /// Split by what actually selects a scene rather than by a flag somebody
-    /// has to maintain: give a page an `apps` line and it moves across on its
-    /// own, take it away and it moves back.
+    /// Split by what a scene actually is rather than by a flag somebody has to
+    /// keep up to date: give a page an `apps` line and it moves across on its
+    /// own, put a reading on a key and it moves the other way.
     var appScenes: [String] {
         keyScenes.filter { !(scenes[$0]?.apps.isEmpty ?? true) }
     }
 
-    /// Scenes nothing claims: the fallback, and the pages you go to because
-    /// you meant to, like the weather.
-    var pageScenes: [String] {
-        keyScenes.filter { scenes[$0]?.apps.isEmpty ?? true }
+    /// Scenes whose keys report numbers: the weather, the machine's own
+    /// vitals. Nothing switches to these on your behalf, and none of them is
+    /// a set of buttons, so they are a different thing to read down a list.
+    var readingScenes: [String] {
+        keyScenes.filter { name in
+            guard let scene = scenes[name], scene.apps.isEmpty else { return false }
+            return scene.keys.contains { $0.reads }
+        }
+    }
+
+    /// Everything else: the fallback, and whatever has been made by hand and
+    /// is reached by a key.
+    var otherScenes: [String] {
+        let claimed = Set(appScenes + readingScenes)
+        return keyScenes.filter { !claimed.contains($0) }
     }
 }
 

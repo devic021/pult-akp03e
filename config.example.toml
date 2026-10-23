@@ -41,11 +41,11 @@
 brightness = 70
 poll_ms = 300
 press_feedback = true
-default = "general"
+default = "Početna"
 
-# ---------------------------------------------------------------- general ----
+# --------------------------------------------------------------- Početna ----
 # Shown whenever no other scene claims the frontmost app.
-[scenes.general]
+[scenes."Početna"]
 
 keys = [
   { icon = "folder",      label = "Finder",  color = "#1f6feb", run = "open -a Finder" },
@@ -64,7 +64,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -96,7 +96,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -128,7 +128,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -161,7 +161,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -195,7 +195,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -228,7 +228,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -260,7 +260,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -292,7 +292,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -324,7 +324,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -351,7 +351,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -376,7 +376,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -397,11 +397,11 @@ keys = [
   { icon = "settings",  label = "Prefs",  color = "#30363d", shortcut = "cmd+," },
   { icon = "x",         label = "Back",   color = "#30363d", shortcut = "escape" },
   { icon = "camera",    label = "Shot",   color = "#9a6700", shortcut = "cmd+shift+4" },
-  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "general" },
+  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "Početna" },
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -422,11 +422,11 @@ keys = [
   { icon = "settings",   label = "Prefs",  color = "#30363d", shortcut = "cmd+," },
   { icon = "x",          label = "Back",   color = "#30363d", shortcut = "escape" },
   { icon = "camera",     label = "Shot",   color = "#9a6700", shortcut = "cmd+shift+4" },
-  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "general" },
+  { icon = "layout-grid", label = "General", color = "#6e40c9", scene = "Početna" },
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -451,7 +451,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -476,7 +476,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -499,11 +499,11 @@ keys = [
   { icon = "save",    label = "Save",   color = "#1a7f37", shortcut = "cmd+s" },
   { icon = "upload",  label = "Export", color = "#6e40c9", shortcut = "cmd+shift+e" },
   { icon = "copy",    label = "Copy",   color = "#30363d", shortcut = "cmd+c" },
-  { icon = "layout-grid", label = "General", color = "#1f6feb", scene = "general" },
+  { icon = "layout-grid", label = "General", color = "#1f6feb", scene = "Početna" },
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -525,11 +525,11 @@ encoders = [
 # travelling front at constant speed.
 #
 # The keys keep whatever they are bound to: a canvas replaces the picture, not
-# the press. Button 1 is left on "back to general" so a canvas scene can always
+# the press. Button 1 is left on "back to Početna" so a canvas scene can always
 # be left, nothing on screen says what the keys do.
 
 [scenes.prelet]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" } },
   { cw = { scene = "talas" }, ccw = { scene = "dah" } },
@@ -543,7 +543,7 @@ background = "#06070a"
 shear = 0.25              # its own: tilts the bar into a diagonal wipe
 
 [scenes.talas]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.talas.surface]
 kind = "canvas"
 effect = "wave"
@@ -552,7 +552,7 @@ background = "#070a10"
 fill = 0.45               # its own: liquid in a tank instead of a bare line
 
 [scenes.puls]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.puls.surface]
 kind = "canvas"
 effect = "pulse"
@@ -562,7 +562,7 @@ origin = [0.5, 0.5]       # its own: rings are born in the middle of the seam,
                           # so they appear already sixteen pixels across
 
 [scenes.kisa]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.kisa.surface]
 kind = "canvas"
 effect = "rain"
@@ -572,7 +572,7 @@ wind = 0.25               # its own: sideways drift. Past about 0.4 add
                           # mapping = "physical", or the slant kinks at a seam
 
 [scenes.zora]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.zora.surface]
 kind = "canvas"
 effect = "aurora"
@@ -584,7 +584,7 @@ color_cycle = 600         # ten minutes for one drift, so it is a different
                           # colour every time you happen to glance at it
 
 [scenes.orbita]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.orbita.surface]
 kind = "canvas"
 effect = "orbit"
@@ -597,7 +597,7 @@ trail = 0.45              # its own: seconds of the past still drawn. This is
                           # plastic, at 0 it crosses invisibly
 
 [scenes.skok]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.skok.surface]
 kind = "canvas"
 effect = "warp"
@@ -608,7 +608,7 @@ exponent = 2.8            # its own: 1 a drift, 2.4 perspective, 4 a violent
 density = 1.6             # more stars; the count knob is shared by all ten
 
 [scenes.lava]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.lava.surface]
 kind = "canvas"
 effect = "lava"
@@ -620,7 +620,7 @@ threshold = 1.0           # its own: 1.0 is a blob that ends at its own radius.
 speed = 0.6               # slower than life, which is the whole point of it
 
 [scenes.vatra]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.vatra.surface]
 kind = "canvas"
 effect = "ember"
@@ -631,7 +631,7 @@ height = 0.8              # its own: how far up the dock the flame reaches
 smoke = 0.35              # its own: dissolve the tip into the background
 
 [scenes.dah]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.dah.surface]
 kind = "canvas"
 effect = "breathe"
@@ -782,7 +782,7 @@ keys = [
 ]
 
 buttons = [
-  { scene = "general" },
+  { scene = "Početna" },
   { shortcut = "cmd+shift+4" },
   { shortcut = "ctrl+up" },
 ]
@@ -835,14 +835,14 @@ swallow_first_press = true
 sleep_image = "~/.config/pult/sleep.png"
 
 [scenes.moja]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.moja.surface]
 kind = "canvas"
 source = "~/.config/pult/proba.gif"
 mapping = "packed"
 
 [scenes.uspravno]
-buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
+buttons = [ { scene = "Početna" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
 [scenes.uspravno.surface]
 kind = "canvas"
 source = "~/.config/pult/uspravno.gif"

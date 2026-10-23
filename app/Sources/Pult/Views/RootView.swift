@@ -173,16 +173,28 @@ private struct Sidebar: View {
                     SidebarHeading(T("sidebar.apps"))
                 }
 
-                // The fallback and the readouts, together because neither is
-                // reached by switching application: you land on one when
-                // nothing claims what is in front, and you go to the other
-                // because you meant to.
-                Section {
-                    ForEach(state.config.pageScenes, id: \.self) { name in
-                        SceneRow(name: name).tag(name)
+                // Readouts stand apart from both. Nothing switches to one on
+                // your behalf, and none of them is a set of buttons, so
+                // reading them down the same list as Chrome and Mail asked
+                // what the weather had to do with either.
+                if !state.config.readingScenes.isEmpty {
+                    Section {
+                        ForEach(state.config.readingScenes, id: \.self) { name in
+                            SceneRow(name: name).tag(name)
+                        }
+                    } header: {
+                        SidebarHeading(T("sidebar.readings"))
                     }
-                } header: {
-                    SidebarHeading(T("sidebar.pages"))
+                }
+
+                if !state.config.otherScenes.isEmpty {
+                    Section {
+                        ForEach(state.config.otherScenes, id: \.self) { name in
+                            SceneRow(name: name).tag(name)
+                        }
+                    } header: {
+                        SidebarHeading(T("sidebar.other"))
+                    }
                 }
 
                 // Drawings are deliberately not listed here. They live in the
@@ -356,6 +368,7 @@ private struct SceneRow: View {
     @EnvironmentObject private var state: AppState
     let name: String
     @State private var hovering = false
+    @State private var confirming = false
 
     private var scene: DeckScene? { state.config.scenes[name] }
 
@@ -399,6 +412,19 @@ private struct SceneRow: View {
         }
         .onHover { hovering = $0 }
         .contextMenu { menuItems }
+        // Asked before, not undone after. A scene is six keys, three buttons
+        // and nine knob bindings, and the menu used to take all of it on one
+        // click with nothing to click back.
+        .confirmationDialog(
+            T("scene.delete.sure"),
+            isPresented: $confirming,
+            titleVisibility: .visible
+        ) {
+            Button(T("scene.delete"), role: .destructive) { state.deleteScene(name) }
+            Button(T("cancel"), role: .cancel) {}
+        } message: {
+            Text("\(name)\n\n\(T("scene.delete.sure.help"))")
+        }
     }
 
     @ViewBuilder
@@ -409,10 +435,9 @@ private struct SceneRow: View {
         // The fallback cannot go: the daemon refuses a configuration whose
         // default scene is missing. The item was there and did nothing, which
         // reads as the app being broken rather than as a rule.
-        Button(T("scene.delete"), role: .destructive) { state.deleteScene(name) }
+        Button(T("scene.delete"), role: .destructive) { confirming = true }
             .disabled(name == state.config.defaultScene)
             .help(name == state.config.defaultScene ? T("scene.delete.default") : "")
-            .disabled(name == state.config.defaultScene)
     }
 }
 
