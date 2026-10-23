@@ -13,9 +13,9 @@ enum SelfTest {
         do {
             let status = try client.send(["cmd": "status"], as: Status.self)
             print("status      : ok")
-            print("  device    : \(status.device?.kind ?? "—") \(status.device?.firmware ?? "")")
-            print("  scene     : \(status.scene ?? "—") page \((status.page ?? 0) + 1)/\(status.pages ?? 1)")
-            print("  front     : \(status.app ?? "—")")
+            print("  device    : \(status.device?.kind ?? "-") \(status.device?.firmware ?? "")")
+            print("  scene     : \(status.scene ?? "-") page \((status.page ?? 0) + 1)/\(status.pages ?? 1)")
+            print("  front     : \(status.app ?? "-")")
             print("  keystrokes: \(status.keystrokes_allowed == true ? "allowed" : "blocked")")
             if status.device == nil { failures.append("status carried no device") }
         } catch {
@@ -52,7 +52,7 @@ enum SelfTest {
             // Every one of these is something a newer daemon, or a hand, could
             // have written and this build has no case for. `surface` used to be
             // one opaque blob and survived for free; now that it is typed, what
-            // is at risk is a *knob* inside it — so that is what this asks
+            // is at risk is a *knob* inside it, so that is what this asks
             // about. Same for the screensaver, typed in the same change.
             let sample = """
             {"brightness":70,"poll_ms":300,"press_feedback":true,"default":"general",

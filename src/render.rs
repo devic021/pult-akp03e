@@ -85,7 +85,7 @@ impl Readout {
     /// A key's reading, resolved from what the feeds have last said.
     ///
     /// The caller has already chosen which of the key's readings this is;
-    /// everything else — the templates, the ramp, the staleness — is settled
+    /// everything else, the templates, the ramp, the staleness, is settled
     /// here, so none of that arithmetic happens twice per frame.
     pub fn of(key: &Key, bindings: &Bindings, now: SystemTime, hours: i32) -> Readout {
         let value = key
@@ -578,8 +578,8 @@ impl Renderer {
 
     /// Draws a line, optionally giving every digit the same advance.
     ///
-    /// Inter's figures are proportional — `1` measures 0.349 em against `0` at
-    /// 0.545 — so a reading going from 11 to 12 would shift sideways under
+    /// Inter's figures are proportional, `1` measures 0.349 em against `0` at
+    /// 0.545, so a reading going from 11 to 12 would shift sideways under
     /// your eye, which on a number that updates reads as the dock twitching.
     /// The face has tabular figures, but reaching them needs OpenType feature
     /// application that this renderer does not do, so the advance is equalised
@@ -630,7 +630,7 @@ impl Renderer {
     ///
     /// Measured rather than taken from the face's metrics. A reading has no
     /// descenders to balance, so centring on the line height sits it visibly
-    /// high — and `°` reaches above the cap line, which no metric reports.
+    /// high, and `°` reaches above the cap line, which no metric reports.
     fn centred(&self, text: &str, scale: PxScale, height: f32) -> f32 {
         match self.ink(text, scale) {
             Some((top, bottom)) => (height - (bottom - top)) / 2.0 - top,

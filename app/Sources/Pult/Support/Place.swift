@@ -6,12 +6,12 @@ import Foundation
 /// Entirely optional: the coordinates can be typed in instead, and the pane
 /// offers both. Location is a permission people are right to be careful with,
 /// so this asks only when the button is pressed, asks for kilometre accuracy
-/// rather than the best available, and keeps nothing — the answer goes
+/// rather than the best available, and keeps nothing, the answer goes
 /// straight to the daemon, which rounds it again before writing it down.
 ///
 /// Every path out of `find` ends in `finish`. macOS will sometimes never
-/// answer at all — Location Services off for the whole machine, or a bundle it
-/// has quietly decided not to prompt for — and an interface stuck on "asking"
+/// answer at all, Location Services off for the whole machine, or a bundle it
+/// has quietly decided not to prompt for, and an interface stuck on "asking"
 /// with no way out is worse than one that admits it does not know.
 final class Locator: NSObject, ObservableObject, CLLocationManagerDelegate {
     /// Whether a request is in the air, so the button can say so.
@@ -125,7 +125,7 @@ final class Locator: NSObject, ObservableObject, CLLocationManagerDelegate {
 ///
 /// `44.991, 20.158` is exact and tells you nothing; "Stara Pazova" is the only
 /// form in which a wrong position is obvious at a glance. The name is read
-/// once and never saved or sent anywhere — the daemon goes on knowing only the
+/// once and never saved or sent anywhere, the daemon goes on knowing only the
 /// two numbers.
 ///
 /// Asked again only when the coordinates actually change: the pane refreshes

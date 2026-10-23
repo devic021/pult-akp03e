@@ -8,7 +8,7 @@ import UniformTypeIdentifiers
 /// about a scene at all. It names scenes, but it belongs to the dock.
 ///
 /// Two things are said here rather than left to be discovered. Nothing in Pult
-/// keeps the Mac awake — the dock asks to paint one last frame before sleep
+/// keeps the Mac awake, the dock asks to paint one last frame before sleep
 /// and then lets go. And when the Mac does sleep, nothing can animate: the
 /// daemon is frozen with everything else, so the still picture below is what
 /// stays on the keys until it wakes.
@@ -176,7 +176,7 @@ private struct Head: View {
 /// Which scenes it cycles through.
 ///
 /// A list rather than one scene, because each member is a whole scene and
-/// keeps its own motion, colours, geometry and frame rate — so a playlist is
+/// keeps its own motion, colours, geometry and frame rate, so a playlist is
 /// not a slideshow of pictures but a rotation of entirely different things.
 private struct Playlist: View {
     @EnvironmentObject private var state: AppState
@@ -189,7 +189,7 @@ private struct Playlist: View {
             Menu {
                 // Drawings only. A scene of six labelled keys is a controller,
                 // and a controller is not what you want to be looking at from
-                // across the room — nor does it stop the dock burning the same
+                // across the room, nor does it stop the dock burning the same
                 // six pictures into the same six screens, which is half of why
                 // this exists. A hand-written config naming one still works;
                 // the editor simply will not suggest it.

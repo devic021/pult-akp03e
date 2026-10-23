@@ -156,7 +156,7 @@ private struct SceneChooser: View {
 
     var body: some View {
         Picker("", selection: $selection) {
-            Text("—").tag("")
+            Text("-").tag("")
             ForEach(state.config.sceneNames, id: \.self) { name in
                 Text(name).tag(name)
             }

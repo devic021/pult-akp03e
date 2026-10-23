@@ -5,7 +5,7 @@ import Foundation
 /// Every type the app exchanges with the daemon keeps one of these per unknown
 /// key. Without it the app is a lossy filter: its `CodingKeys` list what this
 /// version knows, the synthesised encoder writes only those, and the first save
-/// from the editor would quietly delete anything a newer daemon had written —
+/// from the editor would quietly delete anything a newer daemon had written,
 /// a feed, a surface, a binding. Reading and writing back what we do not
 /// understand costs a few lines and removes a whole class of data loss.
 enum JSONValue: Codable, Equatable, Hashable {

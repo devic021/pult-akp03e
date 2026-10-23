@@ -5,7 +5,7 @@ import Foundation
 ///
 /// Decoding is deliberately forgiving. The daemon leaves out anything empty so
 /// the file it writes stays readable, and Swift's synthesised decoder does not
-/// fall back to a property's default value for a missing key — it throws. Every
+/// fall back to a property's default value for a missing key; it throws. Every
 /// type below therefore decodes by hand, treating absence as the default.
 
 struct Action: Codable, Equatable, Hashable {
@@ -106,7 +106,7 @@ struct Ramp: Codable, Equatable, Hashable {
     /// it holds, because a temperature off the scale is still that end of it.
     var stops: [Stop] = []
 
-    /// One breakpoint. The daemon writes it as a pair — `[-5, "#1f6feb"]` —
+    /// One breakpoint. The daemon writes it as a pair, `[-5, "#1f6feb"]`,
     /// so it decodes from an unkeyed container rather than from fields.
     struct Stop: Codable, Equatable, Hashable, Identifiable {
         var id = UUID()
@@ -476,7 +476,7 @@ struct DeckScene: Codable, Equatable {
 
     /// Whether this scene exists only to paint something.
     ///
-    /// A canvas with no keys is not an application's scene — it is a look you
+    /// A canvas with no keys is not an application's scene; it is a look you
     /// switch the dock to. The buttons and knobs do not count: a drawing still
     /// needs a way back out, so every one of them carries "return to general"
     /// on a button, and counting that would put all of them back in the wrong
@@ -495,7 +495,7 @@ struct DeckScene: Codable, Equatable {
 /// controller and becomes something to look at.
 ///
 /// Absent means the dock never rests, which is what it did before any of this
-/// existed — so a configuration written then keeps its meaning.
+/// existed, so a configuration written then keeps its meaning.
 struct Idle: Codable, Equatable {
     /// How long since the last keystroke or pointer move: `30s`, `3m`, `1h`.
     var after: String = "3m"
@@ -603,7 +603,7 @@ struct Config: Codable, Equatable {
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Config.known) ?? [:]
     }
 
-    /// Whole tables this version knows nothing about — feeds, for one.
+    /// Whole tables this version knows nothing about, feeds, for one.
     var extra: [String: JSONValue] = [:]
 
     private static let known: Set<String> = [

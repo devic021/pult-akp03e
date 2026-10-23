@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Its own pane rather than a section inside the scene editor. A scene editor
 /// is about what the six keys *do*; this is about what the dock *looks like*,
-/// and the two are rarely changed in the same sitting — a canvas is chosen
+/// and the two are rarely changed in the same sitting, a canvas is chosen
 /// once and then tuned, while bindings are edited constantly.
 struct AnimationsView: View {
     @EnvironmentObject private var state: AppState

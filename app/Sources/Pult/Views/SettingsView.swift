@@ -3,7 +3,7 @@ import UniformTypeIdentifiers
 
 /// Settings as one page: titled sections, run down the page, each holding
 /// full-width rows. A row carries its icon, its name and a line saying what it
-/// does on the left, and its control — switch, button, slider — on the right.
+/// does on the left, and its control, switch, button, slider, on the right.
 ///
 /// No tabs: a page you scroll is one thing to read, where tabs are four things
 /// to find, and nothing here is long enough to need hiding.

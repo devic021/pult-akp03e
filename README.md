@@ -22,7 +22,7 @@ is nothing to run in a terminal.
 
 Keys bound to a keystroke need **System Settings › Privacy & Security ›
 Accessibility** (called *Device Control and Data Access* on macOS 27). Tick
-`pultd` there — the daemon, not the app: the app does not press keys, the daemon
+`pultd` there, the daemon, not the app: the app does not press keys, the daemon
 does. Keys bound to `run` or `volume` work without it.
 
 Requires macOS 26 or later.
@@ -37,7 +37,7 @@ everything that claims nothing.
 Each of the **six keys with a display** carries:
 
 * a **label**, which shrinks and wraps to fit rather than being cut off
-* an **icon** — one of 1865 from [Lucide](https://lucide.dev), or an image of
+* an **icon**, one of 1865 from [Lucide](https://lucide.dev), or an image of
   your own, with its own colour
 * a **background colour**, and text black or white, whichever reads better,
   unless you say otherwise
@@ -48,7 +48,7 @@ Keys can be dragged to swap them. Past the sixth they spill onto further pages;
 bind a knob to turn them, and the dock shows which page it is on.
 
 There are also **three plain buttons** with no display, and **three encoders**,
-each with a twist in either direction and a press of its own — nine bindings
+each with a twist in either direction and a press of its own, nine bindings
 from the knobs alone.
 
 ### What a key can do
@@ -64,14 +64,14 @@ from the knobs alone.
 | `hour` | Walk a scene of readings through its forecast |
 
 Every key is drawn by the daemon and sent as a finished picture, so what the
-editor shows is what the dock shows — the preview is the same renderer.
+editor shows is what the dock shows: the preview is the same renderer.
 
 ## The device
 
 ![The device pane](assets/readme/device.png)
 
 Brightness, applied as you drag it. Sleep and wake on demand. And the **boot
-logo** — the one thing the dock keeps in its own memory and goes on showing as
+logo**, the one thing the dock keeps in its own memory and goes on showing as
 the backdrop behind the keys. Set your own picture, put Pult's mark there, or
 take it off again.
 
@@ -82,7 +82,7 @@ black panel over it, which is what removing can honestly mean here.
 ## Animations
 
 A scene can paint across the whole dock instead of six separate pictures: ten
-built-in motions, or a file of your own — a GIF, an animated PNG or WebP, a
+built-in motions, or a file of your own: a GIF, an animated PNG or WebP, a
 folder of numbered frames, or one still picture.
 
 ![The animation gallery](assets/readme/animations.png)
@@ -92,7 +92,7 @@ with the real plastic drawn in, because that is the one question a flat preview
 cannot answer.
 
 Each effect declares the settings it honours and the range it will accept, and
-the editor builds its controls from that — so a slider can never outlive the
+the editor builds its controls from that, so a slider can never outlive the
 thing it drives, and a new effect grows the gallery with no change to the app.
 Before saving, put it on the dock for twenty seconds and watch it there; the
 trial expires on its own.
@@ -124,8 +124,8 @@ caption = "oseća {vreme.feels|round}°"
 ramp    = { field = "vreme.temp", stops = [[-5, "#1f6feb"], [24, "#9a6700"]] }
 ```
 
-The number is drawn as large as it measures — three glyphs comfortably, five at
-a push, six never — which is why a per cent sign belongs in the caption. Digits
+The number is drawn as large as it measures, three glyphs comfortably, five at
+a push, six never, which is why a per cent sign belongs in the caption. Digits
 are given a common advance so a reading going from 11 to 12 does not shift
 under your eye. A missing value is an em dash, never a zero.
 
@@ -139,13 +139,13 @@ When a host goes quiet the last number stays, dimmed, with its age in place of
 its caption. An old temperature is still information; a blank key is not.
 
 The shipped example builds a weather page from two open hosts that need no key
-and no account — about 3 KB a poll. They need to know where you are, and that
+and no account, about 3 KB a poll. They need to know where you are, and that
 does **not** go in the configuration file: the app round-trips that file, copies
 it to `.bak` on every save, and people paste it into bug reports. Coordinates
 live in `~/Library/Application Support/Pult/place.toml`, which the Feeds pane
 writes for you, rounded to about a hundred metres.
 
-The Feeds pane shows each source as a row — whether it is answering, how long
+The Feeds pane shows each source as a row, whether it is answering, how long
 ago, and every field it brought back with its current value. Clicking a field
 copies the template that shows it.
 
@@ -169,7 +169,7 @@ place. It is picked up while the daemon runs; a file that fails to parse is
 reported and the running one is kept.
 
 The file and the app are interchangeable in both directions. Anything the app
-does not understand — a key from a newer build, a table added by hand — survives
+does not understand, a key from a newer build, a table added by hand, survives
 a save untouched rather than being quietly dropped.
 
 ## The hardware
@@ -199,13 +199,13 @@ receiving pictures, and well under 1% of a core drawing them.
 ### The seams
 
 Six 60×60 screens with plastic between them are not a 180×120 image. The gaps
-are real — about a quarter of a key — so a canvas is larger than the sum of its
+are real, about a quarter of a key, so a canvas is larger than the sum of its
 keys, and each key is a window cut out of it.
 
-* **Physical** — 212×136, true geometry. A circle stays round and a diagonal
+* **Physical**, 212×136, true geometry. A circle stays round and a diagonal
   stays straight, at the cost that a travelling front disappears for the width
   of each bezel. Right for rings, orbits and anything with a shape.
-* **Packed** — 180×120, gaps ignored. A front crosses at constant apparent
+* **Packed**, 180×120, gaps ignored. A front crosses at constant apparent
   speed and never stalls. Right for sweeps and meters.
 
 Static text and photographs belong on neither: a letter cut by 16 px of plastic
@@ -226,7 +226,7 @@ Rust and a Swift toolchain, both from the usual places.
 `build-app.sh` signs with a **Developer ID Application** certificate when the
 machine has one, and with a locally generated certificate when it does not. The
 local path is enough for your own Mac and keeps the Accessibility grant stable
-across rebuilds, but no other Mac will accept it — for that it has to be signed
+across rebuilds, but no other Mac will accept it; for that it has to be signed
 with a Developer ID *and* notarised, which is what `notarize.sh` does.
 
 Tools, most of them useful without a dock attached:
@@ -249,7 +249,7 @@ connection and nothing else touches it.
 
 The split is also what makes the permission work. macOS attaches the right to
 send keystrokes to the *responsible* process, which for anything started from a
-terminal is the terminal — or the editor behind it. As a login agent the daemon
+terminal is the terminal, or the editor behind it. As a login agent the daemon
 answers for itself, so the grant lands on `pultd` and stays there.
 
 ## Two things worth knowing
@@ -264,13 +264,13 @@ daemon instead, stays correct from the background, and needs no permission.
 **Why `vendor/ajazz-sdk` exists.** The dock exposes its vendor pipe *and* a
 plain keyboard under one VID/PID/serial. The upstream SDK connects by serial, so
 it can land on the keyboard interface, which macOS refuses without Input
-Monitoring — `connect()` fails with `(0xE00002C1) privilege violation`. The
+Monitoring, `connect()` fails with `(0xE00002C1) privilege violation`. The
 vendored copy adds one function, `Ajazz::connect_path`, so the vendor pipe is
 opened by path. See [`vendor/ajazz-sdk/PATCHES.md`](vendor/ajazz-sdk/PATCHES.md).
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE).
 
 Pult vendors a patched Ajazz SDK under MPL-2.0 and bundles the Lucide icon set
 and the Inter typeface. [THIRD-PARTY.md](THIRD-PARTY.md) names all of them,

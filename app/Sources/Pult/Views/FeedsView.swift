@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// Two questions, in the order they matter: does the dock know where it is,
 /// and is each source answering. Everything else on the page is in service of
-/// those — including the list of field names, which is what a template has to
+/// those, including the list of field names, which is what a template has to
 /// be written against.
 struct FeedsView: View {
     @EnvironmentObject private var state: AppState
@@ -126,7 +126,7 @@ struct FeedsView: View {
     }
 
     /// Takes the daemon's answer, unless something is being typed into the
-    /// fields right now — overwriting a half-typed number is maddening.
+    /// fields right now, overwriting a half-typed number is maddening.
     private func adoptPlaces() {
         if coordinates == nil || (lat.isEmpty && lon.isEmpty) {
             lat = state.feeds.places["lat"] ?? lat
@@ -461,7 +461,7 @@ private struct FeedCard: View {
 ///
 /// Here rather than in the key editor because these are the two questions you
 /// ask while looking at the dock, and neither is worth opening six keys for.
-/// Anything finer — a caption, a ramp, the press cycle — is still the key's
+/// Anything finer, a caption, a ramp, the press cycle, is still the key's
 /// own editor, which this deliberately does not try to replace.
 private struct SceneReadings: View {
     @EnvironmentObject private var state: AppState

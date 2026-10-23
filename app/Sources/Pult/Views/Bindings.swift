@@ -97,7 +97,7 @@ struct BindingsTable: View {
                 ForEach(bound, id: \.offset) { index, key in
                     Row(
                         lead: place(forKey: index),
-                        name: key.label.isEmpty ? (key.icon ?? "—") : key.label,
+                        name: key.label.isEmpty ? (key.icon ?? "-") : key.label,
                         detail: key.action.summary
                     ) {
                         state.page = index / 6

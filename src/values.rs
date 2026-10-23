@@ -31,7 +31,7 @@ extern "C" {
 ///
 /// Hosts are asked for `timezone=auto`, so their timestamps come back as local
 /// civil time with no zone on them. Comparing one to the clock needs this
-/// number and nothing else — no date library, and no parsing of zone names.
+/// number and nothing else, no date library, and no parsing of zone names.
 pub fn local_offset() -> i64 {
     unsafe {
         let zone = CFTimeZoneCopySystem();
@@ -86,7 +86,7 @@ pub struct Series {
 impl Series {
     /// The value in force at `civil`: the last point at or before it.
     ///
-    /// Before the first point this is `None` rather than the first value —
+    /// Before the first point this is `None` rather than the first value,
     /// a series that does not reach back that far should say so.
     pub fn at(&self, civil: i64) -> Option<f64> {
         if self.axis.len() != self.values.len() || self.axis.is_empty() {
@@ -478,8 +478,8 @@ fn push_literal(text: &mut String, chunk: &str) {
 
 /// Applies one formatter.
 ///
-/// `None` means this datum cannot be shown this way — a word asked to be
-/// rounded, say — which the caller turns into an em dash rather than into a
+/// `None` means this datum cannot be shown this way, a word asked to be
+/// rounded, say, which the caller turns into an em dash rather than into a
 /// plausible-looking zero.
 fn format(datum: &Datum, spec: Option<&str>, now_civil: i64) -> Option<String> {
     let (name, arg) = match spec {
@@ -688,6 +688,14 @@ pub const WMO_CODES: &[i64] = &[
     0, 1, 2, 3, 45, 48, 51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86,
     95, 96, 99,
 ];
+
+/// The wall clock as the hosts write it: local, with no zone attached.
+///
+/// Exposed so extraction can tell a timestamp that has passed from one still
+/// to come, which is the difference between "sunset in 2h" and an em dash.
+pub fn civil_now(at: SystemTime) -> i64 {
+    epoch(at) + local_offset()
+}
 
 fn epoch(at: SystemTime) -> i64 {
     at.duration_since(UNIX_EPOCH)

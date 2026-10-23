@@ -5,7 +5,7 @@ import SwiftUI
 /// A copy dragged out of a disk image has an application and a daemon but no
 /// login agent, so nothing is driving the dock and no configuration has ever
 /// arrived. Left to render the ordinary window with nothing in it, the app
-/// came up as an empty frame — no sidebar, no status line, nothing to press —
+/// came up as an empty frame, no sidebar, no status line, nothing to press,
 /// which is the worst possible first impression and gives no clue what is
 /// wrong.
 ///

@@ -2,7 +2,7 @@
 //!
 //! The dock has no processor of its own: every frame comes from here, so when
 //! the Mac sleeps the animation stops wherever it had reached. The dock then
-//! holds that frame — which means the frame it holds all night is ours to
+//! holds that frame, which means the frame it holds all night is ours to
 //! choose, if we are told before it happens.
 //!
 //! Deliberately absent: anything that keeps the Mac awake. A key pad must
@@ -17,7 +17,7 @@ use core_foundation::string::CFStringRef;
 // Knowing when the Mac is about to sleep
 //
 // The dock holds whatever frame it was sent last, so the frame it is holding
-// while the Mac sleeps is ours to choose — but only if we are told before it
+// while the Mac sleeps is ours to choose, but only if we are told before it
 // happens. macOS announces it through IOKit, to a callback on a run loop, and
 // waits for an acknowledgement before going down. That wait is what lets the
 // daemon paint one last picture.

@@ -2,7 +2,7 @@
 //!
 //! Everything here happens once, when a scene is loaded: decode, scale to the
 //! canvas, cut into tiles. The loop that drives the dock then only picks an
-//! index and hands six ready images to the device — it never decodes, never
+//! index and hands six ready images to the device, it never decodes, never
 //! resizes and never scales, because a 1920x1080 GIF off the internet costs
 //! tens of milliseconds a frame and the loop has five.
 //!
@@ -37,7 +37,7 @@ use crate::canvas::{Canvas, Mapping};
 ///
 /// The dock lies flat and wide: 212x136, about 1.56:1. Most animations on the
 /// internet are portrait video clips, and covering the canvas with one throws
-/// away two thirds of its height — so the choice is worth making deliberately
+/// away two thirds of its height, so the choice is worth making deliberately
 /// rather than silently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -57,7 +57,7 @@ pub enum Fit {
 /// crop and starts being vandalism.
 ///
 /// Measured, not chosen: at 212x136 a square source covered keeps 64% of its
-/// height, and that still reads — an emoji or a logo carries a wide empty
+/// height, and that still reads, an emoji or a logo carries a wide empty
 /// margin and cover eats the margin. A phone video keeps 36% and reads as a
 /// mistake. Sixty per cent sits between them.
 const KEEP: f32 = 0.60;
@@ -68,7 +68,7 @@ const KEEP: f32 = 0.60;
 /// `target` the canvas's. The threshold is symmetric on purpose: a banner four
 /// times wider than it is tall loses as much of itself to a cover as a phone
 /// video does, and the rule this replaces was one constant checked only
-/// against portrait sources — so a source at 0.90 was cropped to 58% of its
+/// against portrait sources, so a source at 0.90 was cropped to 58% of its
 /// height without a word being said about it.
 pub fn suggest(aspect: f32, target: f32) -> (Fit, f32) {
     let kept = if aspect >= target {
@@ -329,7 +329,7 @@ fn read_folder(path: &Path) -> Result<Vec<(DynamicImage, Option<Duration>)>> {
             let image = image::open(file)
                 .with_context(|| format!("reading {}", file.display()))?;
             // A folder carries no timing, so every frame takes the configured
-            // rate — one knob instead of a thousand.
+            // rate, one knob instead of a thousand.
             Ok((image, None))
         })
         .collect()

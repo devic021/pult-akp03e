@@ -6,7 +6,7 @@ enum Panel: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var label: String { T("nav.\(rawValue)") }
 
-    /// ⌘1 to ⌘6 — the panes are few and fixed, so they get numbers.
+    /// ⌘1 to ⌘6, the panes are few and fixed, so they get numbers.
     var shortcut: KeyEquivalent {
         switch self {
         case .scenes: return "1"
@@ -112,6 +112,49 @@ private struct Sidebar: View {
                 .padding(.horizontal, 10)
                 .padding(.bottom, 10)
 
+            // The panes are their own block, outside the list.
+            //
+            // They used to be rows inside it, which meant one List carrying
+            // two kinds of thing and two ways of being selected: the list's
+            // own highlight followed the last row clicked while a pill
+            // followed the open pane, so two rows looked chosen at once, in
+            // two different colours. Separating them leaves one selection per
+            // list, and the panes stay put while the scenes scroll.
+            // No heading over this block. It used to carry one that read
+            // "Settings" in Serbian, directly above a row also called
+            // Settings, which asked a question nobody could answer.
+            VStack(spacing: 2) {
+                ForEach(Panel.allCases) { item in
+                    Button {
+                        open(item)
+                    } label: {
+                        HStack(spacing: 9) {
+                            Image(systemName: item.symbol)
+                                .frame(width: 18)
+                                .foregroundStyle(
+                                    panel == item
+                                        ? AnyShapeStyle(Design.accent)
+                                        : AnyShapeStyle(.secondary)
+                                )
+                            Text(item.label)
+                                .font(.appBody.weight(panel == item ? .semibold : .regular))
+                            Spacer()
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .contentShape(.rect)
+                        .background {
+                            RoundedRectangle(cornerRadius: 7)
+                                .fill(panel == item ? Design.pill(.dark) : .clear)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(item.shortcut, modifiers: .command)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 10)
+
             List(selection: Binding(
                 get: { state.selectedScene },
                 set: { name in
@@ -123,37 +166,6 @@ private struct Sidebar: View {
                 }
             )) {
                 Section {
-                    ForEach(Panel.allCases) { item in
-                        // A tap gesture inside a List loses the first click to
-                        // the list's own selection; a button does not.
-                        Button {
-                            panel = item
-                        } label: {
-                            HStack(spacing: 9) {
-                                Image(systemName: item.symbol)
-                                    .frame(width: 18)
-                                    .foregroundStyle(
-                                        panel == item ? AnyShapeStyle(Design.accent) : AnyShapeStyle(.secondary)
-                                    )
-                                Text(item.label)
-                                    .font(.appBody.weight(panel == item ? .semibold : .regular))
-                                Spacer()
-                            }
-                            .contentShape(.rect)
-                        }
-                        .buttonStyle(.plain)
-                        .keyboardShortcut(item.shortcut, modifiers: .command)
-                        .listRowBackground(
-                            panel == item
-                                ? AnyView(RoundedRectangle(cornerRadius: 7).fill(Design.pill(.dark)))
-                                : AnyView(Color.clear)
-                        )
-                    }
-                } header: {
-                    SidebarHeading(T("sidebar.setup"))
-                }
-
-                Section {
                     ForEach(state.config.keyScenes, id: \.self) { name in
                         SceneRow(name: name).tag(name)
                     }
@@ -163,9 +175,9 @@ private struct Sidebar: View {
 
                 // Drawings are deliberately not listed here. They live in the
                 // Animations pane, which both lists them and is the only place
-                // that can edit one — a second list in the sidebar was the
-                // same set of names twice, and the one in the sidebar opened
-                // the pane anyway.
+                // that can edit one: a second list in the sidebar was the same
+                // set of names twice, and the one in the sidebar opened the
+                // pane anyway.
             }
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
@@ -190,6 +202,22 @@ private struct Sidebar: View {
             }
             .padding(10)
         }
+    }
+
+    /// Opens a pane, and makes sure the scene editor has something to edit.
+    ///
+    /// Choosing "Scenes" with nothing selected used to show an empty pane,
+    /// which reads as a failure to load rather than as a choice not yet made.
+    private func open(_ item: Panel) {
+        if item == .scenes, state.selectedScene == nil {
+            let scenes = state.config.keyScenes
+            state.selectedScene = state.status?.scene.flatMap { active in
+                scenes.contains(active) ? active : nil
+            } ?? (scenes.contains(state.config.defaultScene)
+                ? state.config.defaultScene
+                : scenes.first)
+        }
+        panel = item
     }
 
     private func commit() {
@@ -376,7 +404,7 @@ private struct SceneRow: View {
 /// A copy dragged out of a disk image has an app and a daemon but no login
 /// agent, so it comes up connected to nothing. Leaving that to be discovered
 /// in Settings means the first thing a new copy does is look broken, so it
-/// says what is wrong and fixes it in one press — and it is gone the moment
+/// says what is wrong and fixes it in one press, and it is gone the moment
 /// there is nothing to fix.
 private struct FirstRun: View {
     @EnvironmentObject private var state: AppState

@@ -516,7 +516,7 @@ encoders = [
 
 # ======================================================================= platno
 # A scene can paint across the whole dock instead of six separate keys. The
-# seams are real — about a quarter of a key of plastic between each screen — so
+# seams are real, about a quarter of a key of plastic between each screen, so
 # these are sweeps, waves and fills, never text or photographs: a letter cut by
 # the bezel is a letter gone.
 #
@@ -526,7 +526,7 @@ encoders = [
 #
 # The keys keep whatever they are bound to: a canvas replaces the picture, not
 # the press. Button 1 is left on "back to general" so a canvas scene can always
-# be left — nothing on screen says what the keys do.
+# be left, nothing on screen says what the keys do.
 
 [scenes.prelet]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
@@ -594,7 +594,7 @@ lobes = [3, 2]            # its own: 1,1 an ellipse; 3,2 a knot; 2,1 a figure
                           # of eight
 trail = 0.45              # its own: seconds of the past still drawn. This is
                           # what carries the head across sixteen pixels of
-                          # plastic — at 0 it crosses invisibly
+                          # plastic, at 0 it crosses invisibly
 
 [scenes.skok]
 buttons = [ { scene = "general" }, { shortcut = "cmd+shift+4" }, { shortcut = "ctrl+up" } ]
@@ -648,7 +648,7 @@ floor = 0.08              # its own: the level at the bottom of a breath. Keep
 #
 #   value = "{vreme.temp|round}°"      feed name, field name, formatter
 #
-# Formatters, chosen by what fits a key — 54 px of usable width holds three
+# Formatters, chosen by what fits a key, 54 px of usable width holds three
 # comfortable glyphs at 34 px and five at 22, never six, which is why a `%`
 # belongs in the caption and not on the number:
 #
@@ -671,7 +671,7 @@ floor = 0.08              # its own: the level at the bottom of a breath. Keep
 # show the wrong weather.
 #
 # Both hosts below are open-meteo: no key, no account, about 2.5 KB a poll.
-# They need to know where you are, and that does not go in this file — the app
+# They need to know where you are, and that does not go in this file, the app
 # round-trips it, copies it to .bak on every save and people paste it into bug
 # reports. Put your coordinates in a file of their own instead:
 #
@@ -701,14 +701,18 @@ bearing = "/current/wind_direction_10m"
 rain    = "/hourly/precipitation_probability/0"
 hi      = "/daily/temperature_2m_max/0"
 lo      = "/daily/temperature_2m_min/0"
-sunset  = "/daily/sunset/0"
+# The next one that has not happened yet, not today's: after sunset the
+# first would be a time in the past, and the key would show nothing all
+# evening, which is exactly when somebody looks at it.
+sunrise = "future:/daily/sunrise"
+sunset  = "future:/daily/sunset"
 # Windows, which say their own width in the caption and so do not scrub: the
 # worst it gets in the next six hours, and how much falls in them.
 rain6   = "max:/hourly/precipitation_probability[0:6]"
 mm6     = "sum:/hourly/precipitation[0:6]"
 
 # A series carries its own axis, so the knob reads the hour the host named
-# rather than counting array slots — which is an hour wrong twice a year.
+# rather than counting array slots, which is an hour wrong twice a year.
 # `for` names the scalar it stands in for, so `{vreme.temp}` scrubs by itself.
 #
 # Every reading on the page has one. A single key moving while the other five
@@ -761,9 +765,11 @@ keys = [
   # No number at all: the sky is a glyph, with today's range under it.
   { icon = "{vreme.code|wmo}", label = "{vreme.hi|round}/{vreme.lo|round}", color = "#0d1117" },
 
-  { value = "{vreme.sunset|until}", caption = "zalazak", icon = "sunset", color = "#6e40c9",
+  { value = "{vreme.sunset|until}", caption = "do zalaska", icon = "sunset", color = "#6e40c9",
     cycle = [
-      { value = "{vreme.sunset|clock}", caption = "u", icon = "clock" },
+      { value = "{vreme.sunset|clock}", caption = "zalazak", icon = "sunset" },
+      { value = "{vreme.sunrise|until}", caption = "do izlaska", icon = "sunrise" },
+      { value = "{vreme.sunrise|clock}", caption = "izlazak", icon = "sunrise" },
     ] },
 
   { value = "{vazduh.aqi|round}", caption = "vazduh",
@@ -792,7 +798,7 @@ encoders = [
 # When nobody has touched the Mac for a while the dock stops being a controller
 # and becomes something to look at. Any scene will do; a canvas is the point.
 #
-# Waking is a keystroke, a mouse move or a press on the dock itself — the dock
+# Waking is a keystroke, a mouse move or a press on the dock itself, the dock
 # is a vendor HID device, not a keyboard, so macOS never sees its presses and
 # the daemon folds them in on its own. The waking press is swallowed, because
 # slapping a key to wake the dock should not also fire what that key does.
@@ -807,7 +813,7 @@ after = "3m"
 scene = "zora"
 
 # Or a playlist, which wins over `scene`. Each member is a whole scene, so
-# every one keeps its own effect, colours, geometry and frame rate — and each
+# every one keeps its own effect, colours, geometry and frame rate, and each
 # can be judged on its own before it goes in here.
 scenes = ["zora", "lava", "vatra", "dah"]
 hold = "5m"            # how long each member runs
@@ -822,8 +828,8 @@ brightness = 35
 dark_when_display_sleeps = false
 swallow_first_press = true
 
-# The frame the dock holds while the Mac sleeps. Nothing can animate then —
-# the daemon is frozen with everything else — so this is one still picture,
+# The frame the dock holds while the Mac sleeps. Nothing can animate then,
+# the daemon is frozen with everything else, so this is one still picture,
 # PNG or JPEG, spread across all six keys. Remove the line and the dock simply
 # keeps whatever it was showing.
 sleep_image = "~/.config/pult/sleep.png"

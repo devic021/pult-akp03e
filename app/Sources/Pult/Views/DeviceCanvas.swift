@@ -209,7 +209,7 @@ struct ButtonFace: View {
 }
 
 /// Our mark where the manufacturer's goes: the same six keys as the app icon,
-/// in grey, with the name set the way a wordmark is — thin, wide, upper case.
+/// in grey, with the name set the way a wordmark is, thin, wide, upper case.
 struct DockBadge: View {
     var scale: CGFloat = 1
 

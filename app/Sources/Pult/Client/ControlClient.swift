@@ -3,7 +3,7 @@ import Foundation
 /// Reads newline-delimited JSON from a socket in chunks.
 ///
 /// One `read` per byte is one system call per byte. Measured against a 2.7 MB
-/// reply — a thirty-three frame canvas preview — that is 1024 ms where reading
+/// reply, a thirty-three frame canvas preview, that is 1024 ms where reading
 /// in 64 KB chunks takes 34: thirty times slower. It matters more than it
 /// sounds, because the receive timeout below is five seconds, so a reply
 /// carrying frames could time out *in the transfer itself* rather than

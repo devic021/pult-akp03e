@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// says that motion honours.
 ///
 /// Not one control is written out by hand. The daemon answers `effects` with
-/// its catalogue and, for each effect, the rows it actually reads — so adding
+/// its catalogue and, for each effect, the rows it actually reads, so adding
 /// an effect to the daemon grows this panel with no change here, and no
 /// control can outlive the thing it drives.
 struct SurfaceSection: View {
@@ -35,7 +35,7 @@ struct SurfaceSection: View {
         VStack(alignment: .leading, spacing: 24) {
             // The gallery first and always. A pane called Animations that
             // opens on a switch, and shows no animation until you find and
-            // flip it, is a pane that looks empty — so choosing one *is* the
+            // flip it, is a pane that looks empty, so choosing one *is* the
             // page, and switching the scene over to a canvas is what choosing
             // quietly does.
             Section2(T("section.effect"), symbol: "waveform") {
@@ -110,7 +110,7 @@ struct SurfaceSection: View {
 
 /// The catalogue as pictures, not as a list of names.
 ///
-/// Each tile is the real dock — six keys with the real plastic between them —
+/// Each tile is the real dock, six keys with the real plastic between them,
 /// running the real motion. That is the only honest way to choose one: on a
 /// flat rectangle every effect looks fine, and the question is what survives
 /// being cut into six.
@@ -275,13 +275,13 @@ private struct KnobRow: View {
     /// What the row shows when nothing has been set: the effect's own answer
     /// where the knob defers to it, and the knob's own default otherwise.
     private var unset: String {
-        if knob.followsEffect { return effect.own(knob.name) ?? "—" }
+        if knob.followsEffect { return effect.own(knob.name) ?? "-" }
         switch knob.preset {
         case .number(let value): return knob.reading(value)
         case .string(let text): return text.isEmpty ? T("key.auto") : text
         case .bool(let flag): return flag ? T("yes") : T("no")
         case .array: return (knob.presetPair ?? []).map { knob.reading($0) }.joined(separator: " · ")
-        default: return "—"
+        default: return "-"
         }
     }
 

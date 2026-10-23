@@ -361,7 +361,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
     // Decoded once when the trial begins, not per frame.
     let mut trial_film: Option<pult::animation::Animation> = None;
     // Told before the Mac goes down, so the frame it holds all night is one we
-    // chose. Nothing here keeps the Mac awake — it only asks to paint first.
+    // chose. Nothing here keeps the Mac awake, it only asks to paint first.
     let sleeping = power::watch_sleep();
     // A deadline, not an elapsed check: waiting 20 ms at a time and then asking
     // whether 66 ms had passed meant the first eligible iteration landed at 80,
@@ -438,7 +438,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             tau = 0.0;
             // The file the trial names, decoded here and not on every frame.
             // Without this the trial fell through to `Effect::Sweep` and showed
-            // a blue wipe whatever file you had picked — which is the one thing
+            // a blue wipe whatever file you had picked, which is the one thing
             // a trial must never do, since watching the real seams cut the real
             // motion is the entire reason to run one.
             trial_film = trying.as_ref().and_then(|(surface, _)| decode(surface, &found));
@@ -611,7 +611,7 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
             // An if, not a `continue`: the branch used to skip the rest of the
             // iteration, which at 15 fps was harmless because there were spare
             // iterations to spend. At 30 there are none, and a fast canvas
-            // would stop noticing app switches and never send a keep-alive —
+            // would stop noticing app switches and never send a keep-alive,
             // and without one the dock dims itself.
             if let Some((surface, _)) = trying.as_ref() {
                 // While a trial is running the dock shows it and nothing else.
@@ -940,7 +940,7 @@ fn render_preview(
 /// Decodes the file a surface names, if it names one.
 ///
 /// Pulled out of the scene cache because a trial surface is not in the config
-/// and so cannot be looked up by scene name — and a trial that silently showed
+/// and so cannot be looked up by scene name, and a trial that silently showed
 /// a blue sweep instead of the file you picked was defeating the only reason
 /// the trial exists.
 fn decode(surface: &Surface, found: &device::Found) -> Option<pult::animation::Animation> {
@@ -966,7 +966,7 @@ fn decode(surface: &Surface, found: &device::Found) -> Option<pult::animation::A
     ) {
         Ok(animation) => {
             println!(
-                "Anim    : {} — {} frames, {:.1}s",
+                "Anim    : {}, {} frames, {:.1}s",
                 source.display(),
                 animation.frames(),
                 animation.duration().as_secs_f32()
@@ -1049,7 +1049,7 @@ fn paint_image(device: &Ajazz, found: &device::Found, path: &std::path::Path) ->
 
 /// Draws one frame of a scene that paints across the whole dock.
 ///
-/// The keys keep whatever they are bound to — a canvas replaces the picture,
+/// The keys keep whatever they are bound to, a canvas replaces the picture,
 /// not the press.
 fn paint_canvas(
     device: &Ajazz,
@@ -1631,6 +1631,11 @@ fn serve(
             every,
             params,
         } => {
+            // Picked up first. This writes the whole config back from
+            // memory, so an edit made to the file since the last reload would
+            // be thrown away by a change to one feed's interval.
+            state.reload_if_changed();
+
             let changed = {
                 let Some(feed) = state.config.feeds.get_mut(&name) else {
                     reply.fail(format!("no feed called {name:?}"));
@@ -1679,8 +1684,8 @@ fn serve(
 
         Request::Feeds { name } => {
             // Polling on request happens here, on the loop's own thread. It is
-            // one curl with an eight-second ceiling, and the alternative — a
-            // thread writing into the same bindings the pollers use — buys
+            // one curl with an eight-second ceiling, and the alternative, a
+            // thread writing into the same bindings the pollers use, buys
             // nothing for a button somebody pressed once.
             if let Some(name) = name.as_deref() {
                 match state.config.feeds.get(name) {
@@ -1875,7 +1880,7 @@ fn serve(
         }
 
         Request::BootLogo { path, color } => {
-            // The only thing the dock keeps when it is unplugged — and keeps
+            // The only thing the dock keeps when it is unplugged, and keeps
             // showing, since it is the panel's own backdrop and nothing here
             // sends it again after the one write.
             let picture = match &path {

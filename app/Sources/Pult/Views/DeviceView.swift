@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// What can actually be set on the dock itself: brightness, the boot logo it
-/// keeps when unplugged, and sleep. There is nothing else — the device stores
+/// keeps when unplugged, and sleep. There is nothing else, the device stores
 /// no profiles of its own, which the page says rather than leaving you to
 /// wonder where the rest of the settings went.
 struct DeviceView: View {

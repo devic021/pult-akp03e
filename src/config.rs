@@ -65,7 +65,7 @@ pub struct Idle {
     /// The scene to show. Usually a canvas, but any scene will do.
     pub scene: String,
     /// Or a playlist, which wins over `scene`. Each member is a whole scene, so
-    /// every member keeps its own effect, colours, geometry and frame rate —
+    /// every member keeps its own effect, colours, geometry and frame rate,
     /// and each can be judged on its own page before it goes in here.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub scenes: Vec<String>,
@@ -107,7 +107,7 @@ pub struct Idle {
     ///
     /// Nothing here can animate: the daemon is frozen along with the rest of
     /// the Mac, so whatever was sent last is what stays on the keys until it
-    /// wakes. This is that last frame — a PNG or JPEG, drawn across the whole
+    /// wakes. This is that last frame, a PNG or JPEG, drawn across the whole
     /// dock. Absent means the dock simply keeps whatever it was showing.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sleep_image: Option<PathBuf>,
@@ -186,7 +186,7 @@ impl Idle {
 /// reason: unset means the effect's own choice, and the daemon writes back
 /// only what was actually set, which is what keeps the file readable by hand.
 ///
-/// Deliberately flat — no nested tables anywhere in here. `toml` refuses to
+/// Deliberately flat, no nested tables anywhere in here. `toml` refuses to
 /// emit a value after a table within one struct, and `config_survives_a_round_trip`
 /// is the test that catches it. Arrays of numbers are values, not tables, so
 /// `origin` and `lobes` are safe.
@@ -207,7 +207,7 @@ pub struct Surface {
     pub source: Option<PathBuf>,
     /// How a source that is not the canvas's shape is made to fit it.
     ///
-    /// The dock is always landscape — 212x136, about 1.56:1 — so a portrait
+    /// The dock is always landscape, 212x136, about 1.56:1, so a portrait
     /// animation has to lose its edges or gain bars at the sides. `cover`
     /// crops, `contain` keeps all of it, `stretch` distorts.
     #[serde(default, skip_serializing_if = "is_default_fit")]
@@ -244,7 +244,7 @@ pub struct Surface {
 
     // --- motion ------------------------------------------------------------
     /// The only clock. `tau` advances by `dt * speed`, so changing this never
-    /// makes the picture jump — it changes how fast the phase grows, not where
+    /// makes the picture jump, it changes how fast the phase grows, not where
     /// the phase currently is.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f32>,
@@ -324,7 +324,7 @@ pub struct Surface {
     /// `lava`: low merges everything, high separates islands.
     ///
     /// 1.0 is where a blob ends at the radius `scale` gives it. Below that it
-    /// reaches further than its radius — at 0.4 it reaches 1.58 times as far,
+    /// reaches further than its radius, at 0.4 it reaches 1.58 times as far,
     /// which with five blobs is the whole dock lit and nothing to look at.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub threshold: Option<f32>,
@@ -348,7 +348,7 @@ pub struct Surface {
 /// Everything here is `clamp`, never `bail`: a number out of range is not
 /// worth losing the dock over, and a person dragging a slider past the end
 /// should see the end, not an error. `validate()` still refuses the two things
-/// that cannot be guessed — an unparseable colour and a canvas that names
+/// that cannot be guessed, an unparseable colour and a canvas that names
 /// neither an effect nor a file.
 impl Surface {
     const COLOR: Rgb<u8> = Rgb([80, 160, 255]);
@@ -601,8 +601,8 @@ impl Ramp {
 /// The reading travels as a whole: `value`, `caption` and `ramp` come from the
 /// member and are not inherited, because a caption describes the number above
 /// it and a ramp colours that number. Inheriting either is how a key ends up
-/// labelling humidity as a temperature. Everything else — the label, the icon,
-/// the colours — is the key's identity and stays put.
+/// labelling humidity as a temperature. Everything else, the label, the icon,
+/// the colours, is the key's identity and stays put.
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct KeyView {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -864,7 +864,7 @@ impl Config {
     /// Files the config names that are not there.
     ///
     /// Deliberately not part of `validate`. A renamed picture is not a reason
-    /// to refuse a whole configuration and leave the dock dark — that trade
+    /// to refuse a whole configuration and leave the dock dark, that trade
     /// was made once already for `sleep_image` and it was the wrong one. So
     /// this is a list to print, naming the scene and the path, at the moment
     /// the config is read rather than whenever that scene first comes up.

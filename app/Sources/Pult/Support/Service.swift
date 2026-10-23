@@ -2,8 +2,8 @@ import Foundation
 
 /// The background service, as far as the app can manage it.
 ///
-/// The app and the daemon are separate processes on purpose — only one of them
-/// may hold the dock — so starting, stopping and restarting it goes through
+/// The app and the daemon are separate processes on purpose, only one of them
+/// may hold the dock, so starting, stopping and restarting it goes through
 /// `launchctl` rather than through any code shared between them.
 enum Service {
     static let label = "dev.pult.daemon"
@@ -49,7 +49,7 @@ enum Service {
     /// Writes the login agent and starts it.
     ///
     /// The app has to be able to do this itself. Installed from a disk image
-    /// there is no script to run — you drag the app across and open it — so if
+    /// there is no script to run, you drag the app across and open it, so if
     /// only `install.sh` could write this file, a dragged copy would come up
     /// connected to nothing and the disk image's own instructions would be a
     /// promise the app does not keep.
@@ -130,11 +130,11 @@ enum Service {
 /// What the app knows about itself.
 enum About {
     static var version: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "-"
     }
 
     static var build: String {
-        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "-"
     }
 
     static let author = "DT Development"
@@ -143,8 +143,8 @@ enum About {
     /// What is bundled and under whose terms. Not decoration: the icon set and
     /// the device driver both ask for attribution.
     static let credits: [(String, String)] = [
-        ("Lucide", "ISC — 1865 icons"),
-        ("ajazz-sdk", "MPL-2.0 — device protocol"),
-        ("resvg", "MPL-2.0 — SVG rendering"),
+        ("Lucide", "ISC, 1865 icons"),
+        ("ajazz-sdk", "MPL-2.0, device protocol"),
+        ("resvg", "MPL-2.0, SVG rendering"),
     ]
 }

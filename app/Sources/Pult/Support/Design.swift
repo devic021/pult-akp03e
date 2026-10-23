@@ -4,7 +4,7 @@ import SwiftUI
 ///
 /// The values follow the calm macOS 27 shape: a flat neutral window, a
 /// translucent sidebar that runs to the edge, cards a step lighter than the
-/// window, one blue accent, and concentric, modest corners — capsules only on
+/// window, one blue accent, and concentric, modest corners, capsules only on
 /// buttons.
 enum Design {
     // Surfaces, from the deepest well to the most raised.
@@ -54,7 +54,7 @@ extension View {
         modifier(CardSurface(radius: radius, tinted: tinted))
     }
 
-    /// A raised, floating surface — the dock panel, a preview.
+    /// A raised, floating surface, the dock panel, a preview.
     func panel(radius: CGFloat = Design.radiusPanel) -> some View {
         modifier(CardSurface(radius: radius, tinted: false, raised: true))
     }

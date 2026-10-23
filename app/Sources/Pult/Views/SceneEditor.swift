@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The scene being edited, shown as the dock itself: the keys where the keys
 /// are, the knobs where the knobs are. Clicking a control selects it; the
-/// inspector beside it does the editing. Nothing here starts work — the grid
+/// inspector beside it does the editing. Nothing here starts work, the grid
 /// asks for its art once per page through `prefetch`.
 struct SceneEditor: View {
     @EnvironmentObject private var state: AppState

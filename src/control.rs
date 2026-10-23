@@ -90,8 +90,8 @@ pub enum Request {
     Effects,
     /// What every feed has last said, and whether it is being believed.
     ///
-    /// The app shows a feed as a row — what it fetches, the last sample, how
-    /// old it is — and that row has to come from the daemon, because the
+    /// The app shows a feed as a row, what it fetches, the last sample, how
+    /// old it is, and that row has to come from the daemon, because the
     /// daemon is the only thing holding the samples. A `name` polls that one
     /// feed now instead, which is what "check it" on that row does.
     Feeds {

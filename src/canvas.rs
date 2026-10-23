@@ -7,8 +7,8 @@
 //!
 //! Which is right depends on what is being drawn:
 //!
-//! * `Physical` keeps true geometry — a circle stays round, a diagonal stays
-//!   straight — at the cost that a travelling front disappears for the width of
+//! * `Physical` keeps true geometry, a circle stays round, a diagonal stays
+//!   straight, at the cost that a travelling front disappears for the width of
 //!   each bezel. Right for rings, orbits and anything with a shape.
 //! * `Packed` ignores the gaps, so a front crosses the dock at constant
 //!   apparent speed and never stalls. Right for sweeps and meters.
@@ -166,7 +166,7 @@ pub enum Shape {
 ///
 /// One field per TOML key, named identically, so a name means the same thing in
 /// the config file, in this struct and on the row in the editor. Defaults are
-/// applied before this is built — see `Surface::style` — so nothing in here is
+/// applied before this is built, see `Surface::style`, so nothing in here is
 /// ever an `Option` and no effect contains an `unwrap_or`.
 #[derive(Debug, Clone, Copy)]
 pub struct Style {
@@ -487,7 +487,7 @@ impl Effect {
     /// The only source of truth: the `effects` socket reply carries this, the
     /// app renders one row per entry, and a new effect grows the gallery with
     /// no app build. A knob the effect ignores is left out rather than shown
-    /// dead — a slider that does nothing is worse than a slider that is absent.
+    /// dead, a slider that does nothing is worse than a slider that is absent.
     pub fn knobs(self) -> &'static [&'static str] {
         match self {
             Effect::Sweep => &[
@@ -646,7 +646,7 @@ fn wave(canvas: &mut Canvas, tau: f32, style: &Style) {
 
 /// Rings leaving a point. Drawn in physical geometry so they stay round across
 /// the bezels, and born at the dead centre of the horizontal seam by default,
-/// which means a ring is already sixteen pixels across when it first appears —
+/// which means a ring is already sixteen pixels across when it first appears,
 /// exactly how you want something to arrive.
 fn pulse(canvas: &mut Canvas, tau: f32, style: &Style) {
     let width = canvas.width() as f32;
@@ -693,7 +693,7 @@ fn pulse(canvas: &mut Canvas, tau: f32, style: &Style) {
 
 /// Streaks, each with its own speed. They are spread evenly across the dock and
 /// jittered rather than placed at random, because fourteen random columns
-/// leave a key dark about one time in a hundred — and a dark key reads as a
+/// leave a key dark about one time in a hundred, and a dark key reads as a
 /// broken key.
 fn rain(canvas: &mut Canvas, tau: f32, style: &Style) {
     let width = canvas.width() as f32;
@@ -757,8 +757,8 @@ fn aurora(canvas: &mut Canvas, tau: f32, style: &Style) {
         for x in 0..canvas.width() {
             let fx = (x as f32 + drift_x) / width;
             let fy = (y as f32 + drift_y) / height;
-            // Between two and three cycles across the dock. Less than one —
-            // which is what 2.4 radians over a 0..1 fraction gives — is not a
+            // Between two and three cycles across the dock. Less than one,
+            // which is what 2.4 radians over a 0..1 fraction gives, is not a
             // field, it is a gradient, and on the contact sheet it read as one
             // flat wash that barely moved.
             let field = (fx * 6.0 * nu + tau * 0.23 + o1).sin()
@@ -847,7 +847,7 @@ fn orbit(canvas: &mut Canvas, tau: f32, style: &Style) {
 
 /// Stars born near the middle and thrown outward, each drawn as ten samples
 /// back along its own path. Because the path is closed-form in the star's
-/// progress, the streak lengthens by itself as the star accelerates — the jump
+/// progress, the streak lengthens by itself as the star accelerates, the jump
 /// to light speed, without a single extra parameter.
 fn warp(canvas: &mut Canvas, tau: f32, style: &Style) {
     const SAMPLES: u32 = 10;
@@ -982,8 +982,8 @@ fn ember(canvas: &mut Canvas, tau: f32, style: &Style) {
                 + 0.12 * (q * 0.045 / nu + tau * 0.9).sin();
 
             // `feather` is an edge rule: anything past `softness` of the way
-            // in is fully inside. A flame has no edge along its height — it
-            // has a falloff — so feeding the height into it painted the bottom
+            // in is fully inside. A flame has no edge along its height, it
+            // has a falloff, so feeding the height into it painted the bottom
             // half of the dock as one solid block. The falloff is the value
             // itself, and `softness` shapes how fast it goes.
             let fade = (1.0 - f / reach).max(0.0);
@@ -1293,7 +1293,7 @@ mod tests {
 //
 // One row per knob name, and a name means one thing everywhere: `scale` is
 // always a length multiplier, `density` always a count multiplier. The table
-// is where the range, the step and the default live — and `Surface::style`
+// is where the range, the step and the default live, and `Surface::style`
 // reads its clamps from here rather than carrying its own copy, because two
 // copies of a range is how an editor ends up with a slider that runs further
 // than the daemon will accept and silently stops doing anything near the end.
@@ -1332,7 +1332,7 @@ pub enum Preset {
 /// a tagged union the editor would have to unwrap.
 ///
 /// `Effect` is the one that needs saying out loud. Deriving `untagged` wrote it
-/// as `null`, which the editor cannot tell from "this knob has no default" —
+/// as `null`, which the editor cannot tell from "this knob has no default",
 /// and those mean opposite things: one says go and read the effect's own
 /// answer, the other says there is nothing to read. It goes over as the string
 /// `"effect"`, which no knob's own default collides with.

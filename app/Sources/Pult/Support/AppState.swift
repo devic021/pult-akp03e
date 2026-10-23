@@ -10,7 +10,7 @@ import SwiftUI
 ///   back through `MainActor`; a round trip is a millisecond until the moment
 ///   it is not, and a frozen window is a far worse failure than a stale one.
 /// * A view body only ever *reads*. Rendering is asked for by `prefetch`, from
-///   a task tied to what is on screen, never from inside `body` — a body that
+///   a task tied to what is on screen, never from inside `body`, a body that
 ///   starts work runs again, and again, on every resize.
 @MainActor
 final class AppState: ObservableObject {
@@ -40,8 +40,8 @@ final class AppState: ObservableObject {
     ///
     /// Its own selection, not the sidebar's. Sharing one would mean switching
     /// to Animations and back left you on a different scene than you were
-    /// editing, and giving an application's scene a backdrop — the unusual
-    /// case, reachable from the picker — would drag the sidebar with it.
+    /// editing, and giving an application's scene a backdrop, the unusual
+    /// case, reachable from the picker, would drag the sidebar with it.
     @Published var selectedDrawing: String?
     @Published var page = 0
     @Published var selection: Selection?
@@ -148,7 +148,7 @@ final class AppState: ObservableObject {
                 }
                 guard !decoded.isEmpty else { continue }
                 // A strip samples one whole loop however long that loop is,
-                // and lava's is twenty-four seconds — played at its true
+                // and lava's is twenty-four seconds, played at its true
                 // tempo its tile would sit almost still and read as a broken
                 // thumbnail. A gallery tile is there to show the character of
                 // a motion, not its speed, so every one of them loops in
@@ -273,7 +273,7 @@ final class AppState: ObservableObject {
                 }
                 // The daemon expires the trial on its own; this is only the
                 // button's own state catching up, and it is deliberately a
-                // little late rather than a little early — a Stop button that
+                // little late rather than a little early, a Stop button that
                 // disappears while the dock is still showing the trial is
                 // worse than one that lingers.
                 _ = try? await Task.sleep(for: .seconds(seconds + 0.5))

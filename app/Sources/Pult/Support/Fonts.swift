@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The app's typeface, and the text styles that honour the size setting.
 ///
-/// Two problems are solved here. `dynamicTypeSize` is an iOS mechanism — on
+/// Two problems are solved here. `dynamicTypeSize` is an iOS mechanism, on
 /// macOS the system text styles do not follow it, so a size setting built on it
 /// does nothing; these styles are sized in points and multiplied by the chosen
 /// scale instead. And the faces are Inter rather than the system font: drawn
@@ -15,8 +15,8 @@ import SwiftUI
 enum Typeface {
     static let family = "Inter"
 
-    /// Registered from the app bundle at launch. If the files are missing —
-    /// running the executable straight out of the build directory, say — every
+    /// Registered from the app bundle at launch. If the files are missing,
+    /// running the executable straight out of the build directory, say, every
     /// `.custom` call quietly falls back to the system font.
     static func register() {
         guard let resources = Bundle.main.resourceURL?.appending(path: "Fonts") else { return }

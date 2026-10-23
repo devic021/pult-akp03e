@@ -3,13 +3,13 @@ import Foundation
 /// What a scene paints with: six separate keys, or one drawing across the
 /// whole dock.
 ///
-/// Three properties are typed, because the app's structure turns on them —
+/// Three properties are typed, because the app's structure turns on them,
 /// keys or canvas, an effect or a file of your own. Every other setting lives
 /// in `values`, by the name the daemon calls it.
 ///
 /// That is deliberate, and it is the same decision as `Effect::knobs()` on the
 /// daemon side. Thirty-five typed properties here would be a second copy of
-/// that list, in another language, free to drift — and the first thing a
+/// that list, in another language, free to drift, and the first thing a
 /// drifted copy does is show a slider the daemon stopped reading. Here the
 /// daemon that draws the effect is also the only thing that says what the
 /// effect can be told, and a knob it has never heard of survives a round trip

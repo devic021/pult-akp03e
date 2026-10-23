@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::idle::parse_duration;
-use crate::values::{civil_from_iso, Bindings, Datum, Sample, Series};
+use crate::values::{civil_from_iso, civil_now, Bindings, Datum, Sample, Series};
 
 /// How long to give a host before giving up on this round.
 const TIMEOUT: &str = "8";
@@ -148,7 +148,7 @@ pub fn fill(template: &str, places: &BTreeMap<String, String>) -> String {
 ///
 /// A literal `{lat}` sent to a host comes back as a puzzling 400, while this
 /// says which value is missing. Only for URLs: a shell command's braces are
-/// its own — `jq '{a: .b}'` and `awk '{print}'` are not unfilled placeholders,
+/// its own, `jq '{a: .b}'` and `awk '{print}'` are not unfilled placeholders,
 /// and refusing them would rule out most of what a shell feed is for.
 fn fill_url(template: &str, places: &BTreeMap<String, String>) -> Result<String> {
     let text = fill(template, places);
@@ -397,10 +397,11 @@ fn fetch(feed: &Feed, target: &str) -> Result<String> {
 /// Turns a response body into a sample.
 ///
 /// A mapped field that is simply absent is left out, and the key bound to it
-/// shows an em dash. `require` is what makes an absence fatal — that choice
+/// shows an em dash. `require` is what makes an absence fatal, that choice
 /// belongs to whoever wrote the feed, not to this function.
 pub fn read(feed: &Feed, body: &str, now: SystemTime) -> Result<Sample> {
     let root: Value = serde_json::from_str(body).context("the response is not JSON")?;
+    let moment = civil_now(now);
 
     for pointer in &feed.require {
         match root.pointer(pointer) {
@@ -413,7 +414,7 @@ pub fn read(feed: &Feed, body: &str, now: SystemTime) -> Result<Sample> {
     for (field, mapping) in &feed.map {
         match mapping {
             Mapping::One(spec) => {
-                if let Some(datum) = extract(&root, spec) {
+                if let Some(datum) = extract(&root, spec, moment) {
                     sample.fields.insert(field.clone(), datum);
                 }
             }
@@ -428,8 +429,27 @@ pub fn read(feed: &Feed, body: &str, now: SystemTime) -> Result<Sample> {
 }
 
 /// One field, by pointer or by reducer.
-pub fn extract(root: &Value, spec: &str) -> Option<Datum> {
+///
+/// `moment` is now, as the hosts write their timestamps, which only `future`
+/// reads: everything else is arithmetic on numbers and does not know the time.
+pub fn extract(root: &Value, spec: &str, moment: i64) -> Option<Datum> {
     match reducer(spec) {
+        // The next one that has not happened yet. Without this a key showing
+        // "sunset in 2h" turns into an em dash at sunset and stays that way
+        // until midnight, which is exactly when somebody looks at it.
+        Some(("future", path, slice)) => {
+            let stamps: Vec<&str> = root
+                .pointer(&path)?
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .collect();
+            slice
+                .cut(&stamps)
+                .iter()
+                .find(|stamp| civil_from_iso(stamp).is_some_and(|at| at > moment))
+                .map(|stamp| Datum::Text((*stamp).to_string()))
+        }
         Some((operation, path, slice)) => {
             let values = numbers(root.pointer(&path)?);
             let values = slice.cut(&values);
@@ -439,7 +459,9 @@ pub fn extract(root: &Value, spec: &str) -> Option<Datum> {
     }
 }
 
-const OPERATIONS: &[&str] = &["max", "min", "sum", "avg", "first", "last", "count"];
+const OPERATIONS: &[&str] = &[
+    "max", "min", "sum", "avg", "first", "last", "count", "future",
+];
 
 /// Splits `max:/hourly/x[0:6]` into its operation, pointer and bounds.
 fn reducer(spec: &str) -> Option<(&str, String, Slice)> {
@@ -479,7 +501,7 @@ impl Slice {
         }
     }
 
-    fn cut<'a>(&self, values: &'a [f64]) -> &'a [f64] {
+    fn cut<'a, T>(&self, values: &'a [T]) -> &'a [T] {
         let start = self.start.min(values.len());
         let end = self.end.unwrap_or(values.len()).clamp(start, values.len());
         &values[start..end]
@@ -749,14 +771,14 @@ mod tests {
             ("sum:/hourly/precipitation_probability[0:2]", 75.0),
         ] {
             assert_eq!(
-                extract(&root, spec),
+                extract(&root, spec, 0),
                 Some(Datum::Number(expected)),
                 "{spec}"
             );
         }
         // An unknown operation is not a pointer either, so it reads as nothing
         // rather than as a plausible number.
-        assert_eq!(extract(&root, &format!("median:{path}")), None);
+        assert_eq!(extract(&root, &format!("median:{path}"), 0), None);
     }
 
     #[test]
@@ -949,6 +971,30 @@ mod tests {
             ..Feed::default()
         };
         assert_eq!(shell.target(&BTreeMap::new()).unwrap(), "echo '{}'");
+    }
+
+    #[test]
+    fn future_picks_the_next_one_that_has_not_happened() {
+        let body = r#"{"daily":{"sunset":["2026-10-23T17:41","2026-10-24T17:40","2026-10-25T17:38"]}}"#;
+        let root: Value = serde_json::from_str(body).unwrap();
+        let at = |stamp: &str| civil_from_iso(stamp).unwrap();
+
+        // Morning: today's sunset is still ahead.
+        assert_eq!(
+            extract(&root, "future:/daily/sunset", at("2026-10-23T07:00")),
+            Some(Datum::Text("2026-10-23T17:41".into()))
+        );
+        // After it: tomorrow's, not an em dash. This is the whole point,
+        // the evening is exactly when somebody looks at a sunset key.
+        assert_eq!(
+            extract(&root, "future:/daily/sunset", at("2026-10-23T18:00")),
+            Some(Datum::Text("2026-10-24T17:40".into()))
+        );
+        // Past the end of what the host sent, there is honestly nothing.
+        assert_eq!(
+            extract(&root, "future:/daily/sunset", at("2026-10-26T00:00")),
+            None
+        );
     }
 
     #[test]
