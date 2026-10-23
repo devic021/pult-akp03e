@@ -45,12 +45,3 @@ The interface typeface, in `app/Sources/Pult/Resources/Fonts/`. Chosen for full
 Latin Extended coverage: Serbian Latin needs č, ć, š, ž and đ, and a typeface
 that silently substitutes for them looks broken in half the interface.
 <https://rsms.me/inter/>
-
-## Not used, but worth naming
-
-The settings layout follows the shape used by
-[PS5Upload](https://github.com/phantomptr/ps5upload) — full-width rows with the
-control on the right — and its colour and radius values were measured as a
-starting point. No code or asset was copied, and individual measurements are
-not an expressive work, so its GPL-3.0 does not reach Pult. It is named here
-because the resemblance is deliberate and crediting the idea costs nothing.

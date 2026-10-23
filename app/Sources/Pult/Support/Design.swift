@@ -2,12 +2,10 @@ import SwiftUI
 
 /// The app's surfaces, colours and shapes, in one place.
 ///
-/// The values follow the calm macOS 27 shape the reference interface uses: a
-/// flat neutral window, a translucent sidebar that runs to the edge, cards a
-/// step lighter than the window, one blue accent, and concentric, modest
-/// corners — capsules only on buttons. Written from the published token list
-/// of ps5upload (GPL-3.0); none of its code is used here, and none could be:
-/// that client is React, this is SwiftUI.
+/// The values follow the calm macOS 27 shape: a flat neutral window, a
+/// translucent sidebar that runs to the edge, cards a step lighter than the
+/// window, one blue accent, and concentric, modest corners — capsules only on
+/// buttons.
 enum Design {
     // Surfaces, from the deepest well to the most raised.
     static func surface(_ scheme: ColorScheme) -> Color { white(scheme, 0.04, 0.03) }

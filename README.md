@@ -61,6 +61,7 @@ from the knobs alone.
 | `scene` | Switch the dock to another scene |
 | `page` | Turn to the next or previous page |
 | `volume` | Raise or lower the system volume |
+| `hour` | Walk a scene of readings through its forecast |
 
 Every key is drawn by the daemon and sent as a finished picture, so what the
 editor shows is what the dock shows — the preview is the same renderer.
@@ -111,6 +112,42 @@ the Mac sleeps.
 
 Nothing here keeps the Mac awake. The dock asks to paint one last frame before
 sleep and then lets go.
+
+## Live data
+
+A key can show a number that comes from somewhere else instead of a label. A
+feed fetches JSON on a schedule; the key reads it back through a template:
+
+```toml
+value   = "{vreme.temp|round}°"
+caption = "oseća {vreme.feels|round}°"
+ramp    = { field = "vreme.temp", stops = [[-5, "#1f6feb"], [24, "#9a6700"]] }
+```
+
+The number is drawn as large as it measures — three glyphs comfortably, five at
+a push, six never — which is why a per cent sign belongs in the caption. Digits
+are given a common advance so a reading going from 11 to 12 does not shift
+under your eye. A missing value is an em dash, never a zero.
+
+**Pressing a readout changes what it shows** rather than firing an action: `cycle`
+lists the other readings behind it, and a press repaints that one key. A knob
+bound to `hour` moves the whole scene through the forecast and lets go after
+twenty seconds, so a dock left hours ahead cannot quietly show the wrong
+weather.
+
+When a host goes quiet the last number stays, dimmed, with its age in place of
+its caption. An old temperature is still information; a blank key is not.
+
+The shipped example builds a weather page from two open hosts that need no key
+and no account — about 3 KB a poll. They need to know where you are, and that
+does **not** go in the configuration file: the app round-trips that file, copies
+it to `.bak` on every save, and people paste it into bug reports. Coordinates
+live in `~/Library/Application Support/Pult/place.toml`, which the Feeds pane
+writes for you, rounded to about a hundred metres.
+
+The Feeds pane shows each source as a row — whether it is answering, how long
+ago, and every field it brought back with its current value. Clicking a field
+copies the template that shows it.
 
 ## Settings
 
