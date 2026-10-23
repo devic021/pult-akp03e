@@ -553,8 +553,8 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                                 }));
                             }
                         }
-                        Some(Step::Sound(sound)) => {
-                            paint_meter(&device, &found, sound)?;
+                        Some(Step::Sound(sound, silence)) => {
+                            paint_meter(&device, &found, sound, silence)?;
                             meter = Some(Instant::now() + METER_HOLDS);
                         }
                         Some(Step::Cycle(index)) => {
@@ -1135,7 +1135,12 @@ fn paint_canvas(
 }
 
 /// Shows the output level across the whole dock, briefly.
-fn paint_meter(device: &Ajazz, found: &device::Found, sound: pult::sound::Sound) -> Result<()> {
+fn paint_meter(
+    device: &Ajazz,
+    found: &device::Found,
+    sound: pult::sound::Sound,
+    silence: bool,
+) -> Result<()> {
     let (rows, cols) = found.kind.key_layout();
     let (key, _) = found.kind.key_image_format().size;
 
@@ -1146,13 +1151,43 @@ fn paint_meter(device: &Ajazz, found: &device::Found, sound: pult::sound::Sound)
     // for: one percent of volume moves the edge by the same amount wherever
     // it is.
     let mut canvas = Canvas::new(canvas::Mapping::Packed, cols as u32, rows as u32, key as u32);
-    canvas::meter(
-        &mut canvas,
-        sound.level,
-        sound.muted,
-        image::Rgb([77, 163, 255]),
-        image::Rgb([10, 12, 16]),
-    );
+    let tint = image::Rgb([77, 163, 255]);
+    let background = image::Rgb([10, 12, 16]);
+
+    // Two events, two pictures, because they answer different questions. The
+    // bar says how loud and cannot say "off": a muted dock and a quiet one
+    // are the same bar. The glyph says on or off and cannot say how loud.
+    // Drawing both at once was tried, and six speakers swamp a thin bar.
+    if silence {
+        canvas.fill(background);
+        let glyph = if sound.muted { "volume-x" } else { "volume-2" };
+        // Once per key. A single big one centred on the dock would sit
+        // exactly on the seam cross and lose its middle; one inside a key is
+        // whole, and six of them read from anywhere in the room.
+        if let Ok(sprite) =
+            pult::render::sprite(glyph, key as u32 * 3 / 4, image::Rgb([255, 255, 255]))
+        {
+            for index in 0..canvas.keys() {
+                let (ox, oy) = canvas.origin(index);
+                let inset = (key as u32).saturating_sub(sprite.width()) / 2;
+                for (x, y, pixel) in sprite.enumerate_pixels() {
+                    let alpha = f32::from(pixel[3]) / 255.0;
+                    if alpha > 0.0 {
+                        canvas.blend(
+                            (ox + inset + x) as i32,
+                            (oy + inset + y) as i32,
+                            image::Rgb([pixel[0], pixel[1], pixel[2]]),
+                            // Let go reads brighter than silenced, so the two
+                            // are told apart before the glyph is even read.
+                            alpha * if sound.muted { 0.55 } else { 0.95 },
+                        );
+                    }
+                }
+            }
+        }
+    } else {
+        canvas::meter(&mut canvas, sound.level, sound.muted, tint, background);
+    }
 
     for index in 0..canvas.keys().min(found.kind.display_key_count() as u32) {
         device
@@ -1397,8 +1432,9 @@ fn redraw(
 /// What a key press asks the daemon to do next.
 enum Step {
     Scene(String),
-    /// The output changed; show it.
-    Sound(pult::sound::Sound),
+    /// The output changed; show it. The flag says whether the change was the
+    /// mute, because that question wants a different picture from "how loud".
+    Sound(pult::sound::Sound, bool),
     Page(usize),
     /// A readout was pressed: show its next reading.
     Cycle(u8),
@@ -1470,7 +1506,8 @@ fn handle(
                     let pages = scene.pages(per_page);
                     Ok(Some(Step::Page(turn.apply(page, pages))))
                 }
-                Ok(Outcome::Sound(sound)) => Ok(Some(Step::Sound(sound))),
+                Ok(Outcome::Sound(sound)) => Ok(Some(Step::Sound(sound, false))),
+                Ok(Outcome::Muted(sound)) => Ok(Some(Step::Sound(sound, true))),
                 Ok(Outcome::Scrub(hour)) => Ok(Some(Step::Scrub(hour))),
                 Ok(Outcome::Nothing) => Ok(None),
                 // A failed action is the user's problem to fix, not a reason to quit.

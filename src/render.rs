@@ -729,6 +729,16 @@ fn draw_page_strip(canvas: &mut RgbImage, page: usize, pages: usize, color: Rgb<
     }
 }
 
+/// One bundled icon, rasterised to a square.
+///
+/// Exposed because the dock sometimes draws a picture that is not a key: the
+/// volume meter marks mute with a speaker, and rasterising it here keeps one
+/// renderer rather than two that could disagree about what an icon looks like.
+pub fn sprite(name: &str, size: u32, color: Rgb<u8>) -> Result<RgbaImage> {
+    let svg = icons::get(name).ok_or_else(|| anyhow!("unknown icon {name:?}"))?;
+    render_svg(svg, size, color, 0.0, 1.0)
+}
+
 /// Draws the forecast scrub: a dim track along the top of every key, with a
 /// bright tick at the hour being read.
 ///

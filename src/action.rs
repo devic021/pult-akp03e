@@ -10,8 +10,11 @@ use crate::config::{Action, Hour, Mute, Page};
 /// side effect.
 pub enum Outcome {
     Nothing,
-    /// The output changed, and the dock should say so.
+    /// The level moved, and the dock should show how loud it is now.
     Sound(crate::sound::Sound),
+    /// The output was silenced or let go, which is a different question from
+    /// how loud it is and gets a different picture.
+    Muted(crate::sound::Sound),
     SwitchScene(String),
     TurnPage(Turn),
     /// Move the whole scene through the forecast.
@@ -98,7 +101,7 @@ pub fn run(action: &Action) -> Result<Outcome> {
             Mute::On => crate::sound::Which::On,
             Mute::Off => crate::sound::Which::Off,
         };
-        return Ok(Outcome::Sound(crate::sound::silence(which)?));
+        return Ok(Outcome::Muted(crate::sound::silence(which)?));
     }
 
     if let Some(scene) = &action.scene {
