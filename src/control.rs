@@ -97,6 +97,11 @@ pub enum Request {
     Feeds {
         name: Option<String>,
     },
+    /// Says where the dock is, which is what the feeds need and what the
+    /// config deliberately does not carry.
+    SetPlace {
+        place: std::collections::BTreeMap<String, String>,
+    },
     /// Put a surface on the real dock for a moment, without saving it.
     ///
     /// The only way to judge how the seams cut a motion is to watch them do

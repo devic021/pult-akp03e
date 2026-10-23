@@ -136,6 +136,7 @@ struct State {
     /// Where the dock is, read from a file of its own so that a home address
     /// never lands in the config the app round-trips and backs up.
     places: BTreeMap<String, String>,
+    place_stamp: Option<SystemTime>,
     /// Which of its readings each key is showing, by scene and key.
     views: BTreeMap<(String, u8), usize>,
     /// Hours ahead of now that the scene is reading, and when the knob last
@@ -159,6 +160,7 @@ impl State {
             bindings: Arc::new(Mutex::new(Bindings::new())),
             feeds: None,
             places: feed::places(),
+            place_stamp: feed::place_path().as_deref().and_then(modified),
             views: BTreeMap::new(),
             hour: 0,
             scrubbed_at: None,
@@ -179,6 +181,7 @@ impl State {
             return;
         }
         self.places = feed::places();
+        self.place_stamp = feed::place_path().as_deref().and_then(modified);
         self.feeds = Some(Feeds::start(
             &self.config.feeds,
             &self.places,
@@ -193,6 +196,16 @@ impl State {
     /// is taken back rather than unwrapped.
     fn bindings(&self) -> std::sync::MutexGuard<'_, Bindings> {
         self.bindings.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Whether the coordinates file has been touched since it was last read.
+    fn place_changed(&mut self) -> bool {
+        let stamp = feed::place_path().as_deref().and_then(modified);
+        if stamp == self.place_stamp {
+            return false;
+        }
+        self.place_stamp = stamp;
+        true
     }
 
     /// The scrub indicator, or nothing while the scene reads the present.
@@ -619,6 +632,11 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
 
         if last_poll.elapsed() >= poll_every {
             last_poll = Instant::now();
+
+            if state.place_changed() {
+                println!("Place   : changed on disk");
+                state.restart_feeds();
+            }
 
             if let Some(at) = state.scrubbed_at {
                 if at.elapsed() >= SCRUB_HOLDS {
@@ -1505,8 +1523,13 @@ fn serve(
                 pages,
                 ..Frame::default()
             };
+            // Through `reading`, not `key_frame`: the editor is showing a key
+            // somebody is still typing, and a preview that drew the template
+            // instead of the number would be a preview of the wrong thing.
+            let now = SystemTime::now();
+            let bindings = state.bindings();
             match Renderer::new(state.config.font.as_deref(), size)
-                .and_then(|r| r.key_frame(&key, frame))
+                .and_then(|r| r.reading(&key, &bindings, now, state.hour, frame))
                 .and_then(|image| encode_png(&image))
             {
                 Ok(png) => reply.ok(json!({ "png": png })),
@@ -1523,10 +1546,12 @@ fn serve(
                 ..Frame::default()
             };
 
+            let now = SystemTime::now();
+            let bindings = state.bindings();
             let mut pngs = Vec::with_capacity(keys.len());
             for key in &keys {
                 match renderer
-                    .key_frame(key, frame)
+                    .reading(key, &bindings, now, state.hour, frame)
                     .and_then(|image| encode_png(&image))
                 {
                     Ok(png) => pngs.push(serde_json::Value::String(png)),
@@ -1584,6 +1609,21 @@ fn serve(
                 Ok(value) => reply.ok(value),
                 Err(e) => reply.fail(format!("{e:#}")),
             });
+            Ok(false)
+        }
+
+        Request::SetPlace { place } => {
+            match feed::write_places(&place) {
+                Ok(path) => {
+                    println!("Place   : {} values in {}", place.len(), path.display());
+                    // Restarted rather than nudged: the URL a poller is
+                    // holding was built from the old coordinates, and the
+                    // thread has no way of being told the address moved.
+                    state.restart_feeds();
+                    reply.ok(json!({ "path": path }));
+                }
+                Err(e) => reply.fail(format!("{e:#}")),
+            }
             Ok(false)
         }
 

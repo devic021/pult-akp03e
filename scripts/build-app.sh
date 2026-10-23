@@ -92,6 +92,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 	<key>NSHumanReadableCopyright</key>
 	<string>Pult</string>
 
+	<!-- Only ever asked for when somebody presses "find me" on the Feeds
+	     pane, and only to a kilometre: the weather hosts round to a grid of
+	     their own, and the coordinates can always be typed in by hand
+	     instead. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Pult asks where you are so the dock can show your local weather. Nothing leaves this Mac but a latitude and longitude rounded to about a hundred metres, sent to the open-meteo weather service.</string>
+
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>

@@ -15,10 +15,11 @@ struct Action: Codable, Equatable, Hashable {
     var scene: String?
     var volume: Int?
     var page: PageTurn?
+    var hour: HourStep?
 
     var isEmpty: Bool {
         app == nil && run == nil && shortcut == nil
-            && scene == nil && volume == nil && page == nil
+            && scene == nil && volume == nil && page == nil && hour == nil
     }
 
     /// Which of the mutually exclusive actions this is.
@@ -29,11 +30,12 @@ struct Action: Codable, Equatable, Hashable {
         if volume != nil { return .volume }
         if scene != nil { return .scene }
         if page != nil { return .page }
+        if hour != nil { return .hour }
         return .none
     }
 
     enum Kind: String, CaseIterable, Identifiable {
-        case none, app, run, shortcut, volume, scene, page
+        case none, app, run, shortcut, volume, scene, page, hour
         var id: String { rawValue }
         var label: String { T("action.\(rawValue)") }
     }
@@ -56,13 +58,16 @@ struct Action: Codable, Equatable, Hashable {
             return "\(T("action.scene")): \(scene ?? "")"
         case .page:
             return "\(T("action.page")): \(page?.label ?? "")"
+        case .hour:
+            return "\(T("action.hour")): \(hour?.label ?? "")"
         }
     }
 
     /// Switches to another kind of action, dropping the old one: a key can
     /// only carry one, and a leftover field would be written to the file.
     mutating func become(_ kind: Kind) {
-        app = nil; run = nil; shortcut = nil; scene = nil; volume = nil; page = nil
+        app = nil; run = nil; shortcut = nil; scene = nil
+        volume = nil; page = nil; hour = nil
         switch kind {
         case .none: break
         case .app: app = ""
@@ -71,6 +76,7 @@ struct Action: Codable, Equatable, Hashable {
         case .volume: volume = 5
         case .scene: scene = ""
         case .page: page = .next
+        case .hour: hour = .next
         }
     }
 }
@@ -79,6 +85,118 @@ enum PageTurn: String, Codable, CaseIterable, Identifiable {
     case next, prev, first
     var id: String { rawValue }
     var label: String { T("action.page.\(rawValue)") }
+}
+
+/// Which hour of a forecast the whole scene reads from.
+///
+/// Scene-wide rather than per key: one key an hour ahead of the other five is
+/// six numbers that do not belong to each other. The dock lets go of a scrub
+/// on its own after twenty seconds.
+enum HourStep: String, Codable, CaseIterable, Identifiable {
+    case next, prev, now
+    var id: String { rawValue }
+    var label: String { T("action.hour.\(rawValue)") }
+}
+
+/// A colour chosen by a number, so a key's background is itself a reading.
+struct Ramp: Codable, Equatable, Hashable {
+    /// What to read, as `feed.field`.
+    var field: String = ""
+    /// Breakpoints, in order. Between two the colour is mixed; past either end
+    /// it holds, because a temperature off the scale is still that end of it.
+    var stops: [Stop] = []
+
+    /// One breakpoint. The daemon writes it as a pair — `[-5, "#1f6feb"]` —
+    /// so it decodes from an unkeyed container rather than from fields.
+    struct Stop: Codable, Equatable, Hashable, Identifiable {
+        var id = UUID()
+        var value: Double = 0
+        var color: String = "#4da3ff"
+
+        init(value: Double, color: String) {
+            self.value = value
+            self.color = color
+        }
+
+        init(from decoder: Decoder) throws {
+            var pair = try decoder.unkeyedContainer()
+            value = try pair.decode(Double.self)
+            color = try pair.decode(String.self)
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var pair = encoder.unkeyedContainer()
+            try pair.encode(value)
+            try pair.encode(color)
+        }
+
+        // `id` is for the list on screen, never for the file.
+        static func == (a: Stop, b: Stop) -> Bool {
+            a.value == b.value && a.color == b.color
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(value)
+            hasher.combine(color)
+        }
+    }
+
+    enum CodingKeys: String, CodingKey { case field, stops }
+
+    init(field: String = "", stops: [Stop] = []) {
+        self.field = field
+        self.stops = stops
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        field = try values.decodeIfPresent(String.self, forKey: .field) ?? ""
+        stops = try values.decodeIfPresent([Stop].self, forKey: .stops) ?? []
+    }
+}
+
+/// One of the things a key can show. Pressing the key moves to the next.
+///
+/// The reading travels whole: `value`, `caption` and `ramp` come from the
+/// member and are never inherited, because a caption describes the number
+/// above it and a ramp colours that number. The icon is the key's identity, so
+/// it carries over unless the member names its own.
+struct KeyView: Codable, Equatable, Hashable, Identifiable {
+    var id = UUID()
+    var value: String?
+    var caption: String?
+    var ramp: Ramp?
+    var icon: String?
+    var icon_rotate: String?
+
+    enum CodingKeys: String, CodingKey { case value, caption, ramp, icon, icon_rotate }
+
+    init(value: String? = nil, caption: String? = nil) {
+        self.value = value
+        self.caption = caption
+    }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        value = try values.decodeIfPresent(String.self, forKey: .value)
+        caption = try values.decodeIfPresent(String.self, forKey: .caption)
+        ramp = try values.decodeIfPresent(Ramp.self, forKey: .ramp)
+        icon = try values.decodeIfPresent(String.self, forKey: .icon)
+        icon_rotate = try values.decodeIfPresent(String.self, forKey: .icon_rotate)
+    }
+
+    static func == (a: KeyView, b: KeyView) -> Bool {
+        a.value == b.value && a.caption == b.caption && a.ramp == b.ramp
+            && a.icon == b.icon && a.icon_rotate == b.icon_rotate
+    }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(value)
+        hasher.combine(caption)
+        hasher.combine(ramp)
+        hasher.combine(icon)
+        hasher.combine(icon_rotate)
+    }
 }
 
 enum KeyAnimation: String, Codable, CaseIterable, Identifiable {
@@ -96,7 +214,19 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var text_color: String?
     var icon: String?
     var icon_color: String?
+    /// Degrees to turn the icon. A template, so an arrow can point at a wind.
+    var icon_rotate: String?
     var animate: KeyAnimation?
+
+    /// The reading this key shows, as a template: `{vreme.temp|round}°`.
+    /// A key with a value draws the value large and the label not at all.
+    var value: String?
+    /// The line under it, saying what the number is.
+    var caption: String?
+    /// A background chosen by the reading itself.
+    var ramp: Ramp?
+    /// The other things this key can show.
+    var cycle: [KeyView] = []
 
     // Flattened in the daemon's JSON, so they sit beside the art here too.
     var run: String?
@@ -104,10 +234,12 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var scene: String?
     var volume: Int?
     var page: PageTurn?
+    var hour: HourStep?
 
     enum CodingKeys: String, CodingKey {
-        case label, color, text_color, icon, icon_color, animate
-        case app, run, shortcut, scene, volume, page
+        case label, color, text_color, icon, icon_color, icon_rotate, animate
+        case value, caption, ramp, cycle
+        case app, run, shortcut, scene, volume, page, hour
     }
 
     init(
@@ -133,13 +265,19 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         text_color = try values.decodeIfPresent(String.self, forKey: .text_color)
         icon = try values.decodeIfPresent(String.self, forKey: .icon)
         icon_color = try values.decodeIfPresent(String.self, forKey: .icon_color)
+        icon_rotate = try values.decodeIfPresent(String.self, forKey: .icon_rotate)
         animate = try values.decodeIfPresent(KeyAnimation.self, forKey: .animate)
+        value = try values.decodeIfPresent(String.self, forKey: .value)
+        caption = try values.decodeIfPresent(String.self, forKey: .caption)
+        ramp = try values.decodeIfPresent(Ramp.self, forKey: .ramp)
+        cycle = try values.decodeIfPresent([KeyView].self, forKey: .cycle) ?? []
         app = try values.decodeIfPresent(String.self, forKey: .app)
         run = try values.decodeIfPresent(String.self, forKey: .run)
         shortcut = try values.decodeIfPresent(String.self, forKey: .shortcut)
         scene = try values.decodeIfPresent(String.self, forKey: .scene)
         volume = try values.decodeIfPresent(Int.self, forKey: .volume)
         page = try values.decodeIfPresent(PageTurn.self, forKey: .page)
+        hour = try values.decodeIfPresent(HourStep.self, forKey: .hour)
         extra = (try? decoder.container(keyedBy: AnyKey.self))?.unknown(except: Key.known) ?? [:]
     }
 
@@ -147,8 +285,9 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
     var extra: [String: JSONValue] = [:]
 
     private static let known: Set<String> = [
-        "label", "color", "text_color", "icon", "icon_color", "animate",
-        "app", "run", "shortcut", "scene", "volume", "page",
+        "label", "color", "text_color", "icon", "icon_color", "icon_rotate", "animate",
+        "value", "caption", "ramp", "cycle",
+        "app", "run", "shortcut", "scene", "volume", "page", "hour",
     ]
 
     func encode(to encoder: Encoder) throws {
@@ -158,13 +297,19 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         try values.encodeIfPresent(text_color, forKey: .text_color)
         try values.encodeIfPresent(icon, forKey: .icon)
         try values.encodeIfPresent(icon_color, forKey: .icon_color)
+        try values.encodeIfPresent(icon_rotate, forKey: .icon_rotate)
         try values.encodeIfPresent(animate, forKey: .animate)
+        try values.encodeIfPresent(value, forKey: .value)
+        try values.encodeIfPresent(caption, forKey: .caption)
+        try values.encodeIfPresent(ramp, forKey: .ramp)
+        if !cycle.isEmpty { try values.encode(cycle, forKey: .cycle) }
         try values.encodeIfPresent(app, forKey: .app)
         try values.encodeIfPresent(run, forKey: .run)
         try values.encodeIfPresent(shortcut, forKey: .shortcut)
         try values.encodeIfPresent(scene, forKey: .scene)
         try values.encodeIfPresent(volume, forKey: .volume)
         try values.encodeIfPresent(page, forKey: .page)
+        try values.encodeIfPresent(hour, forKey: .hour)
         try encoder.encodeExtra(extra)
     }
 
@@ -172,7 +317,7 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         get {
             Action(
                 app: app, run: run, shortcut: shortcut,
-                scene: scene, volume: volume, page: page
+                scene: scene, volume: volume, page: page, hour: hour
             )
         }
         set {
@@ -182,11 +327,37 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
             scene = newValue.scene
             volume = newValue.volume
             page = newValue.page
+            hour = newValue.hour
         }
     }
 
     var isBlank: Bool {
-        label.isEmpty && icon == nil && action.isEmpty
+        label.isEmpty && icon == nil && action.isEmpty && !reads
+    }
+
+    /// Whether this key reports a number rather than doing something.
+    ///
+    /// A readout's press changes what it shows and fires no action: the daemon
+    /// refuses a key that tries for both, because a press can only mean one
+    /// thing.
+    var reads: Bool { value != nil || !cycle.isEmpty }
+
+    /// How many things this key can show.
+    var views: Int { cycle.count + 1 }
+
+    /// The key as its `index`th reading shows it, wrapping round. The same
+    /// rule the daemon applies, so the editor's preview is the dock's.
+    func view(_ index: Int) -> Key {
+        let slot = views > 0 ? index % views - 1 : -1
+        guard cycle.indices.contains(slot) else { return self }
+        let overlay = cycle[slot]
+        var shown = self
+        shown.value = overlay.value
+        shown.caption = overlay.caption
+        shown.ramp = overlay.ramp
+        shown.icon = overlay.icon ?? icon
+        shown.icon_rotate = overlay.icon_rotate ?? icon_rotate
+        return shown
     }
 
     // `id` exists only to identify a row on screen and is not part of the
@@ -198,7 +369,12 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
             && a.text_color == b.text_color
             && a.icon == b.icon
             && a.icon_color == b.icon_color
+            && a.icon_rotate == b.icon_rotate
             && a.animate == b.animate
+            && a.value == b.value
+            && a.caption == b.caption
+            && a.ramp == b.ramp
+            && a.cycle == b.cycle
             && a.action == b.action
     }
 
@@ -208,10 +384,16 @@ struct Key: Codable, Equatable, Hashable, Identifiable {
         hasher.combine(text_color)
         hasher.combine(icon)
         hasher.combine(icon_color)
+        hasher.combine(icon_rotate)
         hasher.combine(animate)
+        hasher.combine(value)
+        hasher.combine(caption)
+        hasher.combine(ramp)
+        hasher.combine(cycle)
         hasher.combine(action)
     }
 }
+
 
 struct Knob: Codable, Equatable, Hashable {
     var cw = Action()

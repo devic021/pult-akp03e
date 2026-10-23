@@ -88,6 +88,77 @@ enum SelfTest {
             failures.append("unknown-key round trip: \(error.localizedDescription)")
         }
 
+        // A key that reports a number is the newest shape in the file, and the
+        // one most likely to be lost by a decoder that has not caught up.
+        // Checked in Swift alone, so this still passes against a daemon that
+        // predates feeds entirely.
+        do {
+            let sample = """
+            {"value":"{vreme.temp|round}\u{00b0}","caption":"ose\u{0107}a {vreme.feels|round}\u{00b0}",
+             "icon":"thermometer","icon_rotate":"{vreme.bearing|compass16}",
+             "ramp":{"field":"vreme.temp","stops":[[-5,"#1f6feb"],[24,"#9a6700"]]},
+             "cycle":[{"value":"{vreme.hum|round}","caption":"% vlage"}]}
+            """
+            let key = try JSONDecoder().decode(Key.self, from: Data(sample.utf8))
+            let again = try JSONDecoder().decode(
+                Key.self, from: JSONEncoder().encode(key)
+            )
+
+            // The second reading must carry its own caption and must NOT
+            // inherit the ramp: a humidity coloured by a temperature scale is
+            // the exact confusion the daemon's rule exists to prevent.
+            let second = key.view(1)
+            let checks: [(String, Bool)] = [
+                ("reads", key.reads),
+                ("value", again.value == key.value),
+                ("caption", again.caption == key.caption),
+                ("ramp", again.ramp?.stops.count == 2),
+                ("ramp stop", again.ramp?.stops.first?.color == "#1f6feb"),
+                ("rotate", again.icon_rotate == key.icon_rotate),
+                ("cycle", again.cycle.count == 1),
+                ("second reading", second.value == "{vreme.hum|round}"),
+                ("second keeps its own caption", second.caption == "% vlage"),
+                ("second drops the ramp", second.ramp == nil),
+                ("second keeps the icon", second.icon == "thermometer"),
+                ("wraps round", key.view(2).value == key.value),
+            ]
+            print("reading     : "
+                + checks.map { "\($0.0) \($0.1 ? "ok" : "WRONG")" }.joined(separator: ", "))
+            if checks.contains(where: { !$0.1 }) {
+                failures.append("a key that reports a number does not survive a round trip")
+            }
+        } catch {
+            failures.append("reading round trip: \(error.localizedDescription)")
+        }
+
+        // And the shape the Feeds pane reads.
+        do {
+            let sample = """
+            {"feeds":[{"name":"vreme","kind":"http","source":"https://api.open-meteo.com/v1/forecast?x=1",
+                       "every":"15m","stale_after":"2h","age":42,"stale":false,"error":null,
+                       "fields":{"temp":"11.3"},"series":{"temp_h":24}}],
+             "places":{"lat":"45.267","lon":"19.834"},"hour":0}
+            """
+            let report = try JSONDecoder().decode(FeedReport.self, from: Data(sample.utf8))
+            let feed = report.feeds.first
+            let checks: [(String, Bool)] = [
+                ("one feed", report.feeds.count == 1),
+                ("host", feed?.source?.contains("open-meteo") == true),
+                ("age", feed?.age == 42),
+                ("health", feed?.health == .fresh),
+                ("fields", feed?.fields["temp"] == "11.3"),
+                ("series", feed?.series["temp_h"] == 24),
+                ("located", report.located),
+            ]
+            print("feeds       : "
+                + checks.map { "\($0.0) \($0.1 ? "ok" : "WRONG")" }.joined(separator: ", "))
+            if checks.contains(where: { !$0.1 }) {
+                failures.append("the feeds report does not decode")
+            }
+        } catch {
+            failures.append("feeds report: \(error.localizedDescription)")
+        }
+
         do {
             let icons = try client.send(["cmd": "icons"], as: [String].self, field: "icons")
             print("icons       : ok, \(icons.count)")

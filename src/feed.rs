@@ -10,6 +10,7 @@
 //! next six hours", which is the shape every page here has needed so far.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -209,13 +210,44 @@ impl Feed {
 /// Deliberately not in the config. The app round-trips that file, copies it to
 /// `.bak` on every save and people paste it into bug reports; a latitude and a
 /// longitude are a home address, so they live in a file nothing else touches.
+/// The file the coordinates live in, beside the socket.
+///
+/// One function so the reader and the writer cannot drift apart, which with
+/// two copies of a path is only a matter of time.
+pub fn place_path() -> Option<PathBuf> {
+    crate::control::socket_path()
+        .ok()
+        .and_then(|socket| socket.parent().map(|dir| dir.join("place.toml")))
+}
+
+/// Writes the coordinates, in the shape `places` reads back.
+///
+/// The daemon owns this file for the same reason it owns the config: two
+/// processes writing one file is a race nobody can see until it bites.
+pub fn write_places(values: &BTreeMap<String, String>) -> Result<PathBuf> {
+    let path = place_path().context("no home directory to write into")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)
+            .with_context(|| format!("making {}", dir.display()))?;
+    }
+
+    let mut text = String::from(
+        "# Where the dock is. Kept out of config.toml on purpose: that file is\n         # round-tripped by the app, copied to .bak on every save, and pasted\n         # into bug reports. A latitude and a longitude are a home address.\n",
+    );
+    for (name, value) in values {
+        // Quoted whatever it is: a number read back as a string substitutes
+        // the same, and quoting means a name nobody anticipated still works.
+        text.push_str(&format!("{name} = {:?}\n", value));
+    }
+
+    std::fs::write(&path, text).with_context(|| format!("writing {}", path.display()))?;
+    Ok(path)
+}
+
 pub fn places() -> BTreeMap<String, String> {
     let mut places = BTreeMap::new();
 
-    let Some(path) = crate::control::socket_path()
-        .ok()
-        .and_then(|socket| socket.parent().map(|dir| dir.join("place.toml")))
-    else {
+    let Some(path) = place_path() else {
         return places;
     };
     let Ok(text) = std::fs::read_to_string(&path) else {

@@ -165,6 +165,56 @@ final class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Feeds
+
+    /// What every feed has last said, and where the dock thinks it is.
+    @Published private(set) var feeds = FeedReport.empty
+
+    /// Asks the daemon about its feeds, polling one of them first when named.
+    ///
+    /// Ages tick, so this is asked again while the pane is open rather than
+    /// held like the catalogue. It is a few hundred bytes.
+    func loadFeeds(check name: String? = nil) {
+        io.async { [client] in
+            var request: [String: Any] = ["cmd": "feeds"]
+            if let name { request["name"] = name }
+
+            let reply = try? client.send(request)
+            let report: FeedReport? = reply
+                .flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+                .flatMap { try? JSONDecoder().decode(FeedReport.self, from: $0) }
+
+            Task { @MainActor [weak self] in
+                guard let self, let report else { return }
+                self.feeds = report
+            }
+        }
+    }
+
+    /// Tells the daemon where the dock is.
+    ///
+    /// Three decimals, about a hundred metres. The hosts round to a grid of
+    /// their own anyway, and writing somebody's doorstep into a file to buy
+    /// precision nothing uses is not a trade worth making.
+    func setPlace(latitude: Double, longitude: Double, then report: @escaping (String?) -> Void) {
+        let place = [
+            "lat": String(format: "%.3f", latitude),
+            "lon": String(format: "%.3f", longitude),
+        ]
+        let failed = T("feeds.place.failed")
+
+        io.async { [client] in
+            let reply = try? client.send(["cmd": "set_place", "place": place])
+            let ok = reply?["ok"] as? Bool ?? false
+            let message = ok ? nil : ((reply?["error"] as? String) ?? failed)
+
+            Task { @MainActor [weak self] in
+                report(message)
+                self?.loadFeeds()
+            }
+        }
+    }
+
     /// Puts a surface on the real dock for a moment, without saving it.
     ///
     /// The seams are the whole question, and no picture of a dock answers it.

@@ -76,6 +76,21 @@ struct ActionEditor: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.segmented)
+
+            case .hour:
+                Picker("", selection: Binding(
+                    get: { action.hour ?? .next },
+                    set: { action.hour = $0 }
+                )) {
+                    ForEach(HourStep.allCases) { step in
+                        Text(step.label).tag(step)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+                if !compact {
+                    Text(T("action.hour.help")).font(.appCaption).foregroundStyle(.secondary)
+                }
             }
         }
     }

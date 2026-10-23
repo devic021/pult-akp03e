@@ -101,8 +101,22 @@ private struct KeyEditor: View {
 
         Divider().padding(.vertical, 4)
 
-        ActionEditor(action: key.action)
-            .help(T("help.action"))
+        ReadingEditor(key: key)
+
+        Divider().padding(.vertical, 4)
+
+        // A key that reports cannot also act: the daemon refuses the pair,
+        // because a press can only mean one thing. So the action editor steps
+        // aside rather than offering something that would be rejected at load.
+        if key.wrappedValue.reads {
+            Text(T("key.reads.says"))
+                .font(.appCaption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            ActionEditor(action: key.action)
+                .help(T("help.action"))
+        }
 
         Button(role: .destructive) {
             state.setKey(nil, at: slot)
@@ -120,6 +134,212 @@ private struct KeyEditor: View {
         case .pulse: return "waveform.path"
         case .spin: return "arrow.triangle.2.circlepath"
         case .blink: return "light.beacon.max"
+        }
+    }
+}
+
+/// Turns a key into a readout, and edits what it reports.
+private struct ReadingEditor: View {
+    @Binding var key: Key
+
+    var body: some View {
+        Toggle(isOn: Binding(
+            get: { key.reads },
+            set: { on in
+                if on {
+                    key.value = key.value ?? ""
+                    // The action goes with it. Leaving one behind would write
+                    // a file the daemon refuses, and finding that out at load
+                    // is worse than losing it while somebody is watching.
+                    key.action = Action()
+                } else {
+                    key.value = nil
+                    key.caption = nil
+                    key.ramp = nil
+                    key.cycle = []
+                }
+            }
+        )) {
+            Text(T("key.reads")).font(.appCallout)
+        }
+        .toggleStyle(.switch)
+
+        if key.reads {
+            Field(T("key.value")) {
+                TextField(
+                    "",
+                    text: Binding(get: { key.value ?? "" }, set: { key.value = $0 }),
+                    prompt: Text("{vreme.temp|round}\u{00b0}")
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.appCallout.monospaced())
+            }
+            .help(T("key.value.help"))
+
+            Field(T("key.caption")) {
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { key.caption ?? "" },
+                        set: { key.caption = $0.isEmpty ? nil : $0 }
+                    ),
+                    prompt: Text(T("key.caption"))
+                )
+                .textFieldStyle(.roundedBorder)
+            }
+            .help(T("key.caption.help"))
+
+            Field(T("key.iconRotate")) {
+                TextField(
+                    "",
+                    text: Binding(
+                        get: { key.icon_rotate ?? "" },
+                        set: { key.icon_rotate = $0.isEmpty ? nil : $0 }
+                    ),
+                    prompt: Text("{vreme.bearing|compass16}")
+                )
+                .textFieldStyle(.roundedBorder)
+                .font(.appCallout.monospaced())
+            }
+            .help(T("key.iconRotate.help"))
+
+            RampEditor(ramp: $key.ramp)
+            CycleEditor(cycle: $key.cycle)
+        }
+    }
+}
+
+/// The background as a reading of its own.
+private struct RampEditor: View {
+    @Binding var ramp: Ramp?
+
+    var body: some View {
+        Field(T("key.ramp")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(isOn: Binding(
+                    get: { ramp != nil },
+                    set: { on in
+                        ramp = on
+                            ? Ramp(
+                                field: "",
+                                stops: [
+                                    Ramp.Stop(value: 0, color: "#1f6feb"),
+                                    Ramp.Stop(value: 30, color: "#d93025"),
+                                ]
+                            )
+                            : nil
+                    }
+                )) {
+                    Text(ramp == nil ? T("key.ramp.off") : T("key.ramp.field")).font(.appCaption)
+                }
+                .toggleStyle(.switch)
+
+                if ramp != nil {
+                    TextField(
+                        "",
+                        text: Binding(get: { ramp?.field ?? "" }, set: { ramp?.field = $0 }),
+                        prompt: Text("vreme.temp")
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .font(.appCallout.monospaced())
+
+                    ForEach(Array((ramp?.stops ?? []).enumerated()), id: \.element.id) { index, _ in
+                        HStack(spacing: 6) {
+                            TextField("", value: Binding(
+                                get: { ramp?.stops[index].value ?? 0 },
+                                set: { ramp?.stops[index].value = $0 }
+                            ), format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.appCallout.monospacedDigit())
+                            .frame(width: 60)
+
+                            ColorField(
+                                hex: Binding(
+                                    get: { ramp?.stops[index].color },
+                                    set: { ramp?.stops[index].color = $0 ?? "#4da3ff" }
+                                ),
+                                fallback: "#4da3ff"
+                            )
+
+                            Button {
+                                ramp?.stops.remove(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle").font(.appCaption)
+                            }
+                            .buttonStyle(.plain)
+                            .help(T("key.cycle.remove"))
+                        }
+                    }
+
+                    Button {
+                        let last = ramp?.stops.last
+                        ramp?.stops.append(
+                            Ramp.Stop(
+                                value: (last?.value ?? 0) + 10,
+                                color: last?.color ?? "#4da3ff"
+                            )
+                        )
+                    } label: {
+                        Label(T("key.ramp.add"), systemImage: "plus")
+                    }
+                    .buttonStyle(.pult)
+                }
+            }
+        }
+        .help(T("key.ramp.help"))
+    }
+}
+
+/// The other readings a press moves through.
+private struct CycleEditor: View {
+    @Binding var cycle: [KeyView]
+
+    var body: some View {
+        Field(T("key.cycle")) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(T("key.cycle.help"))
+                    .font(.appCaption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(Array(cycle.enumerated()), id: \.element.id) { index, _ in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 6) {
+                            Text("\(index + 2)")
+                                .font(.appCaption.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                            TextField("", text: Binding(
+                                get: { cycle[index].value ?? "" },
+                                set: { cycle[index].value = $0.isEmpty ? nil : $0 }
+                            ), prompt: Text(T("key.value")))
+                            .textFieldStyle(.roundedBorder)
+                            .font(.appCallout.monospaced())
+
+                            Button {
+                                cycle.remove(at: index)
+                            } label: {
+                                Image(systemName: "minus.circle").font(.appCaption)
+                            }
+                            .buttonStyle(.plain)
+                            .help(T("key.cycle.remove"))
+                        }
+
+                        TextField("", text: Binding(
+                            get: { cycle[index].caption ?? "" },
+                            set: { cycle[index].caption = $0.isEmpty ? nil : $0 }
+                        ), prompt: Text(T("key.caption")))
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.leading, 16)
+                    }
+                }
+
+                Button {
+                    cycle.append(KeyView())
+                } label: {
+                    Label(T("key.cycle.add"), systemImage: "plus")
+                }
+                .buttonStyle(.pult)
+            }
         }
     }
 }
