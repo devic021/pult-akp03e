@@ -933,6 +933,10 @@ buttons = [
 
 encoders = [
   { cw = { page = "next" }, ccw = { page = "prev" }, press = { page = "first" } },
-  { cw = { scene = "Vreme" }, ccw = { scene = "Početna" } },
+  # The big knob is left alone here. On the weather page it walks the
+  # forecast; this page has no series to walk, and binding it to "switch to
+  # another scene" means a page you are reading jumps away under an idle
+  # hand, which also quietly defeats pinning.
+  {},
   { cw = { volume = 5 }, ccw = { volume = -5 }, press = { shortcut = "f8" } },
 ]

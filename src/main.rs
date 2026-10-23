@@ -499,6 +499,23 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         Some(Step::Scene(scene)) => {
                             active = scene;
                             page = 0;
+
+                            // While the dock is pinned, choosing a scene
+                            // chooses the pinned one. Otherwise a single press
+                            // defeats the pin and leaves the dock on the new
+                            // scene until an application changes, which with a
+                            // pin set can be never: the thing you pinned so it
+                            // would stay is the one thing that does not.
+                            if state.config.pinned.is_some()
+                                && state.config.pinned.as_deref() != Some(active.as_str())
+                            {
+                                state.config.pinned = Some(active.clone());
+                                match state.config.save(&state.path) {
+                                    Ok(()) => state.stamp = modified(&state.path),
+                                    Err(e) => eprintln!("could not move the pin: {e:#}"),
+                                }
+                                println!("Pinned  : {active:?}");
+                            }
                             paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
                             painted_at = Instant::now();
                             tau = 0.0;
