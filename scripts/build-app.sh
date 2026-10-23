@@ -8,7 +8,22 @@ set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DIST="$ROOT/dist"
-APP="$DIST/Pult.app"
+
+# PULT_DEBUG=1 builds the unoptimised binaries into a bundle of their own, so
+# a change can be looked at in a real window — with the Info.plist that
+# location and the icon need — without disturbing the installed copy or
+# spending two minutes on an optimised build nobody is going to keep.
+if [ -n "${PULT_DEBUG:-}" ]; then
+	APP="$DIST/Pult-debug.app"
+	PROFILE="debug"
+	CARGO_FLAGS=""
+	SWIFT_FLAGS=""
+else
+	APP="$DIST/Pult.app"
+	PROFILE="release"
+	CARGO_FLAGS="--release"
+	SWIFT_FLAGS="-c release"
+fi
 # Which certificate to sign with.
 #
 # A Developer ID Application certificate is what lets another Mac open this
@@ -20,7 +35,15 @@ APP="$DIST/Pult.app"
 # PULT_IDENTITY overrides the search, for a machine with more than one.
 LOCAL_CERT="akp03-deck local signing"
 
-if [ -n "${PULT_IDENTITY:-}" ]; then
+if [ -n "${PULT_DEBUG:-}" ]; then
+	CERT_NAME="${PULT_IDENTITY:-$LOCAL_CERT}"
+	if [ -z "${PULT_IDENTITY:-}" ] \
+		&& security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
+		CERT_NAME="$(security find-identity -v -p codesigning \
+			| grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+	fi
+	RELEASE=0
+elif [ -n "${PULT_IDENTITY:-}" ]; then
 	CERT_NAME="$PULT_IDENTITY"
 	RELEASE=1
 elif security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
@@ -33,17 +56,17 @@ else
 fi
 
 cd "$ROOT"
-echo "==> daemon"
-cargo build --release --quiet
+echo "==> daemon ($PROFILE)"
+cargo build $CARGO_FLAGS --quiet
 
-echo "==> app"
-(cd app && swift build -c release --quiet)
+echo "==> app ($PROFILE)"
+(cd app && swift build $SWIFT_FLAGS --quiet)
 
 echo "==> icon"
 ICONSET="$DIST/Pult.iconset"
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
-./target/release/mkicon "$ICONSET" >/dev/null
+"./target/$PROFILE/mkicon" "$ICONSET" >/dev/null
 
 echo "==> bundle"
 rm -rf "$APP"
@@ -52,8 +75,8 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # second copy of the app, next to the one in /Applications.
 touch "$DIST/.metadata_never_index"
 
-cp app/.build/release/Pult "$APP/Contents/MacOS/Pult"
-cp target/release/pultd "$APP/Contents/MacOS/pultd"
+cp "app/.build/$PROFILE/Pult" "$APP/Contents/MacOS/Pult"
+cp "target/$PROFILE/pultd" "$APP/Contents/MacOS/pultd"
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
 # The interface is set in Inter, registered from here at launch.

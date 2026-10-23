@@ -468,6 +468,13 @@ pub struct Scene {
     /// What this scene paints with; absent means six separate keys.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub surface: Option<Surface>,
+    /// How many hours ahead a knob bound to `hour` may walk this scene.
+    ///
+    /// Absent means as far as the feeds actually brought back, which is the
+    /// honest default: a knob that can reach an hour nobody fetched is a knob
+    /// that reaches an em dash.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hours: Option<usize>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

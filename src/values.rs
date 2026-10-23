@@ -275,6 +275,21 @@ impl Bindings {
         entry.stale(sample, now)
     }
 
+    /// The longest run of values any feed carries.
+    ///
+    /// This is the real limit on walking a forecast: past the end of the
+    /// series every reading is an em dash, so a knob that goes further is a
+    /// knob with nothing at the end of it.
+    pub fn span(&self) -> usize {
+        self.feeds
+            .values()
+            .filter_map(|entry| entry.sample.as_ref())
+            .flat_map(|sample| sample.series.values())
+            .map(|series| series.values.len())
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Fills the holes in `template`.
     ///
     /// `hours` is the forecast scrub: 0 is now, and anything else reads every

@@ -191,6 +191,41 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Changes how often a feed is asked, and what it is asked for.
+    ///
+    /// Sent to the daemon rather than written into the config here: the feed
+    /// table is not modelled in this app, only carried through, and editing a
+    /// structure you do not model is how fields go missing.
+    func setFeed(
+        _ name: String,
+        every: String? = nil,
+        params: [String: String]? = nil,
+        then report: ((String?) -> Void)? = nil
+    ) {
+        var request: [String: Any] = ["cmd": "set_feed", "name": name]
+        if let every { request["every"] = every }
+        if let params { request["params"] = params }
+        let failed = T("feeds.change.failed")
+
+        io.async { [client] in
+            let reply = try? client.send(request)
+            let ok = reply?["ok"] as? Bool ?? false
+            let message = ok ? nil : ((reply?["error"] as? String) ?? failed)
+
+            Task { @MainActor [weak self] in
+                report?(message)
+                guard let self else { return }
+                if message == nil {
+                    // The daemon rewrote the file, so what this app holds is
+                    // now a version behind. Taking it back avoids the next
+                    // save putting the old interval straight back.
+                    self.refresh()
+                }
+                self.loadFeeds()
+            }
+        }
+    }
+
     /// Tells the daemon where the dock is.
     ///
     /// Three decimals, about a hundred metres. The hosts round to a grid of
@@ -318,6 +353,15 @@ final class AppState: ObservableObject {
             livePress = event["index"] as? Int
         case "key_up":
             livePress = nil
+        case "config":
+            // The file changed underneath us. With nothing unsaved, take it:
+            // holding a stale snapshot is how an edit made in the file gets
+            // overwritten by the next save from here.
+            if dirty {
+                error = T("config.changed")
+            } else {
+                refresh()
+            }
         case "app", "scene", "page", "device":
             // Cheap: one field of one reply, and still off the main thread.
             io.async { [client] in

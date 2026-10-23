@@ -44,12 +44,6 @@ const MIN_TIMEOUT: Duration = Duration::from_millis(2);
 /// How long a key stays lit after being pressed.
 const PRESS_FLASH: Duration = Duration::from_millis(180);
 
-/// How many hours ahead the forecast can be read.
-///
-/// The same twenty-four the shipped feed asks the host for: a knob that can
-/// reach an hour the feed never fetched is a knob that reaches an em dash.
-const SCRUB_SPAN: usize = 24;
-
 /// How long a scrubbed forecast holds before it comes back to now.
 ///
 /// It must come back on its own: a dock left three hours ahead is a dock
@@ -208,9 +202,24 @@ impl State {
         true
     }
 
+    /// How far a knob may walk this scene.
+    ///
+    /// What the scene asks for, held down to what the feeds actually brought
+    /// back. Configuring forty-eight hours against a day of data would put
+    /// half the dial past the end of the forecast.
+    fn span(&self, scene: &str) -> usize {
+        let available = self.bindings().span();
+        let asked = self
+            .config
+            .scene(scene)
+            .and_then(|scene| scene.hours)
+            .unwrap_or(available);
+        asked.clamp(1, available.max(1))
+    }
+
     /// The scrub indicator, or nothing while the scene reads the present.
-    fn scrub_marker(&self) -> Option<(usize, usize)> {
-        (self.hour != 0).then(|| (self.hour.unsigned_abs() as usize, SCRUB_SPAN))
+    fn scrub_marker(&self, scene: &str) -> Option<(usize, usize)> {
+        (self.hour != 0).then(|| (self.hour.unsigned_abs() as usize, self.span(scene)))
     }
 
     /// Which reading a key is showing.
@@ -532,8 +541,9 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                         }
                         Some(Step::Scrub(hour)) => {
                             let before = state.hour;
+                            let span = state.span(&active) as i32;
                             state.hour = match hour {
-                                Hour::Next => (state.hour + 1).min(SCRUB_SPAN as i32 - 1),
+                                Hour::Next => (state.hour + 1).min(span - 1),
                                 Hour::Prev => (state.hour - 1).max(0),
                                 Hour::Now => 0,
                             };
@@ -655,6 +665,10 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                 for line in state.config.missing_files() {
                     eprintln!("Config  : {line}");
                 }
+                // Announced, or an editor sitting open keeps a snapshot taken
+                // before the change and writes it back on the next save,
+                // quietly deleting whatever was edited on disk meanwhile.
+                control.publish(json!({ "event": "config" }));
                 reduced = pult::idle::reduce_motion();
                 device.set_brightness(state.config.brightness.min(100))?;
                 active = state.config.scene_for(app.as_deref()).to_string();
@@ -788,7 +802,7 @@ fn paint(
     let per_page = display_keys as usize;
     let keys = scene.page(page, per_page);
     let marker = marker(page, scene.pages(per_page));
-    let hour = state.scrub_marker();
+    let hour = state.scrub_marker(scene_name);
 
     // A full repaint is the baseline every later change is measured against,
     // so the record of what is on the keys starts again here.
@@ -1201,7 +1215,7 @@ fn refresh(
 
     let per_page = display_keys as usize;
     let marker = marker(page, scene.pages(per_page));
-    let hour = state.scrub_marker();
+    let hour = state.scrub_marker(scene_name);
     let mut drawn = false;
 
     for (index, key) in scene.page(page, per_page).iter().enumerate() {
@@ -1294,7 +1308,7 @@ fn redraw(
             time,
             press,
             pages,
-            hour: state.scrub_marker(),
+            hour: state.scrub_marker(scene_name),
         };
         let image = draw(state, key, frame, scene_name, index);
         device
@@ -1612,6 +1626,42 @@ fn serve(
             Ok(false)
         }
 
+        Request::SetFeed {
+            name,
+            every,
+            params,
+        } => {
+            let changed = {
+                let Some(feed) = state.config.feeds.get_mut(&name) else {
+                    reply.fail(format!("no feed called {name:?}"));
+                    return Ok(false);
+                };
+                if let Some(every) = every {
+                    feed.every = every;
+                }
+                if let Some(params) = params {
+                    feed.params = params;
+                }
+                // Checked before it is written. A unit nobody honours saved to
+                // disk and silently ignored is the worst of both.
+                if let Err(e) = feed.check() {
+                    reply.fail(format!("{e:#}"));
+                    return Ok(false);
+                }
+                feed.clone()
+            };
+
+            if let Err(e) = state.config.save(&state.path) {
+                reply.fail(format!("{e:#}"));
+                return Ok(false);
+            }
+            state.stamp = modified(&state.path);
+            state.restart_feeds();
+            println!("Feed    : {name} every {}", changed.every);
+            reply.ok(json!({ "feed": name }));
+            Ok(false)
+        }
+
         Request::SetPlace { place } => {
             match feed::write_places(&place) {
                 Ok(path) => {
@@ -1664,6 +1714,7 @@ fn serve(
                         "source": feed.url.clone().or_else(|| feed.run.clone()),
                         "every": feed.every,
                         "stale_after": feed.stale_after,
+                        "params": feed.params,
                         // Seconds, not a sentence: the app writes the words,
                         // in whichever of its two languages is showing.
                         "age": bindings.age(name, now).map(|age| age.as_secs()),
@@ -1689,6 +1740,14 @@ fn serve(
 
             reply.ok(json!({
                 "feeds": feeds,
+                // The parameters this daemon knows how to offer as a control.
+                // Shipped from here for the same reason the knob table is: a
+                // list of pickers written into the app outlives the daemon it
+                // was written against, and then offers a choice nothing reads.
+                "known": feed::known_params()
+                    .iter()
+                    .map(|(name, options)| json!({ "name": name, "options": options }))
+                    .collect::<Vec<_>>(),
                 // Where the readings are being asked for, so the app can tell
                 // the difference between "no coordinates yet" and "the host is
                 // down" without guessing.

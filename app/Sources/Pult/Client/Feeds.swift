@@ -25,11 +25,14 @@ struct FeedStatus: Decodable, Identifiable, Equatable {
     let fields: [String: String]
     /// Each run of values it carries, and how long that run is.
     let series: [String: Int]
+    /// What it is currently asking for: units, a time zone. Merged into the
+    /// address by the daemon, so a picker here never rewrites a query string.
+    let params: [String: String]
 
     var id: String { name }
 
     enum CodingKeys: String, CodingKey {
-        case name, kind, source, every, age, stale, error, fields, series
+        case name, kind, source, every, age, stale, error, fields, series, params
         case staleAfter = "stale_after"
     }
 
@@ -45,6 +48,7 @@ struct FeedStatus: Decodable, Identifiable, Equatable {
         error = try values.decodeIfPresent(String.self, forKey: .error)
         fields = try values.decodeIfPresent([String: String].self, forKey: .fields) ?? [:]
         series = try values.decodeIfPresent([String: Int].self, forKey: .series) ?? [:]
+        params = try values.decodeIfPresent([String: String].self, forKey: .params) ?? [:]
     }
 
     /// Whether this feed has ever answered.
@@ -72,6 +76,33 @@ struct FeedStatus: Decodable, Identifiable, Equatable {
     var fieldNames: [String] { fields.keys.sorted() }
 }
 
+/// One parameter the daemon knows how to offer as a control.
+///
+/// Shipped by the daemon rather than written out here, for the same reason the
+/// knob table is: a list of pickers in Swift outlives the daemon it was
+/// written against, and a drifted copy offers a choice nothing reads. No
+/// options means free text.
+struct KnownParam: Decodable, Identifiable, Equatable {
+    let name: String
+    let options: [String]
+
+    var id: String { name }
+
+    enum CodingKeys: String, CodingKey { case name, options }
+
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        name = try values.decode(String.self, forKey: .name)
+        options = try values.decodeIfPresent([String].self, forKey: .options) ?? []
+    }
+
+    /// The name on the row, translated where we have it.
+    var label: String { T("param.\(name)", or: name.replacingOccurrences(of: "_", with: " ")) }
+
+    /// One choice, as people write it: `kmh` is "km/h", not "kmh".
+    func label(for option: String) -> String { T("param.\(name).\(option)", or: option) }
+}
+
 /// Every feed, and where the readings are being asked for.
 struct FeedReport: Decodable, Equatable {
     var feeds: [FeedStatus] = []
@@ -79,12 +110,14 @@ struct FeedReport: Decodable, Equatable {
     /// dock is, which is a different problem from a host being down and has
     /// to read as one.
     var places: [String: String] = [:]
+    /// What this daemon will let the app change about a feed.
+    var known: [KnownParam] = []
     /// Hours ahead of now the dock is currently reading; zero is the present.
     var hour: Int = 0
 
     static let empty = FeedReport()
 
-    enum CodingKeys: String, CodingKey { case feeds, places, hour }
+    enum CodingKeys: String, CodingKey { case feeds, places, hour, known }
 
     init() {}
 
@@ -92,6 +125,7 @@ struct FeedReport: Decodable, Equatable {
         let values = try decoder.container(keyedBy: CodingKeys.self)
         feeds = try values.decodeIfPresent([FeedStatus].self, forKey: .feeds) ?? []
         places = try values.decodeIfPresent([String: String].self, forKey: .places) ?? [:]
+        known = try values.decodeIfPresent([KnownParam].self, forKey: .known) ?? []
         hour = try values.decodeIfPresent(Int.self, forKey: .hour) ?? 0
     }
 

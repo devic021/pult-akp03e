@@ -97,6 +97,16 @@ pub enum Request {
     Feeds {
         name: Option<String>,
     },
+    /// Changes how often a feed is asked, and what it is asked for.
+    ///
+    /// Only these two: the address and the mapping are the shape of the feed
+    /// and belong in the file, while the interval and the units are choices
+    /// somebody changes while looking at the dock.
+    SetFeed {
+        name: String,
+        every: Option<String>,
+        params: Option<std::collections::BTreeMap<String, String>>,
+    },
     /// Says where the dock is, which is what the feeds need and what the
     /// config deliberately does not carry.
     SetPlace {

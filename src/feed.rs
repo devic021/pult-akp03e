@@ -57,6 +57,13 @@ pub struct Feed {
     /// honest for a feed that reads this machine and wrong for anything else.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stale_after: Option<String>,
+    /// Query parameters merged into the address.
+    ///
+    /// Units live here rather than buried in the URL, so the app can offer a
+    /// picker for them without having to parse and rewrite a query string
+    /// somebody hand-wrote. A name set here wins over the same name in `url`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<String, String>,
     /// Pointers that must arrive carrying a value.
     ///
     /// A 200 that quietly omits a field is a failure, not data. Without this a
@@ -108,24 +115,43 @@ impl Feed {
         parse_duration(self.stale_after.as_deref()?)
     }
 
-    /// What to fetch or run, with the places filled in.
+    /// What to fetch or run, with the places filled in and `params` applied.
     pub fn target(&self, places: &BTreeMap<String, String>) -> Result<String> {
-        let template = match self.kind {
-            FeedKind::Http => self.url.as_deref().context("an http feed needs a url")?,
-            FeedKind::Shell => self.run.as_deref().context("a shell feed needs a run")?,
-        };
-        fill(template, places)
+        match self.kind {
+            FeedKind::Shell => {
+                let run = self.run.as_deref().context("a shell feed needs a run")?;
+                Ok(fill(run, places))
+            }
+            FeedKind::Http => {
+                let url = self.url.as_deref().context("an http feed needs a url")?;
+                let filled = fill_url(url, places)?;
+                if self.params.is_empty() {
+                    Ok(filled)
+                } else {
+                    Ok(with_params(&filled, &self.params))
+                }
+            }
+        }
     }
 }
 
-/// Substitutes `{name}` from `places`, and refuses to fetch a URL still
-/// carrying a hole: a literal `{lat}` sent to a host is a puzzling 400, while
-/// this says which value is missing.
-pub fn fill(template: &str, places: &BTreeMap<String, String>) -> Result<String> {
+/// Substitutes `{name}` from `places`.
+pub fn fill(template: &str, places: &BTreeMap<String, String>) -> String {
     let mut text = template.to_string();
     for (name, value) in places {
         text = text.replace(&format!("{{{name}}}"), value);
     }
+    text
+}
+
+/// The same, refusing a URL that still carries a hole.
+///
+/// A literal `{lat}` sent to a host comes back as a puzzling 400, while this
+/// says which value is missing. Only for URLs: a shell command's braces are
+/// its own — `jq '{a: .b}'` and `awk '{print}'` are not unfilled placeholders,
+/// and refusing them would rule out most of what a shell feed is for.
+fn fill_url(template: &str, places: &BTreeMap<String, String>) -> Result<String> {
+    let text = fill(template, places);
     if let Some(open) = text.find('{') {
         let end = text[open..]
             .find('}')
@@ -271,6 +297,56 @@ pub fn places() -> BTreeMap<String, String> {
         places.insert(name, text);
     }
     places
+}
+
+/// Puts `params` into a URL's query, replacing any of the same name.
+///
+/// Rewritten rather than appended: a second `temperature_unit=` would leave
+/// the host to decide which one it meant, and hosts do not agree about that.
+fn with_params(url: &str, params: &BTreeMap<String, String>) -> String {
+    let (base, query) = match url.split_once('?') {
+        Some((base, query)) => (base, query),
+        None => (url, ""),
+    };
+
+    let mut pairs: Vec<String> = query
+        .split('&')
+        .filter(|pair| !pair.is_empty())
+        .filter(|pair| {
+            let name = pair.split('=').next().unwrap_or("");
+            !params.contains_key(name)
+        })
+        .map(str::to_string)
+        .collect();
+
+    for (name, value) in params {
+        // Values here are unit names and timezones, not free text; anything
+        // that would need escaping is a config somebody will have to fix
+        // anyway, and silently mangling it would hide that.
+        pairs.push(format!("{name}={value}"));
+    }
+
+    if pairs.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", pairs.join("&"))
+    }
+}
+
+/// The parameters this runtime knows how to offer as a control, and what each
+/// one may be set to.
+///
+/// Shipped by the daemon for the same reason the knob table is: a list of
+/// pickers hard-coded in Swift outlives the daemon it was written against, and
+/// the first thing a drifted copy does is offer a choice nothing reads. An
+/// empty `options` means the value is free text.
+pub fn known_params() -> &'static [(&'static str, &'static [&'static str])] {
+    &[
+        ("temperature_unit", &["celsius", "fahrenheit"]),
+        ("wind_speed_unit", &["kmh", "ms", "mph", "kn"]),
+        ("precipitation_unit", &["mm", "inch"]),
+        ("timezone", &[]),
+    ]
 }
 
 /// Fetches and extracts once.
@@ -830,6 +906,59 @@ mod tests {
                 let run = sample.series.get("run").expect("an hourly series");
                 assert!(run.axis.len() >= 12, "an hourly axis of {}", run.axis.len());
                 assert!(run.at(run.axis[0]).is_some());
+            }
+        }
+    }
+
+    #[test]
+    fn parameters_replace_rather_than_pile_up() {
+        let mut feed = weather();
+        feed.params.insert("temperature_unit".into(), "fahrenheit".into());
+        feed.params.insert("timezone".into(), "auto".into());
+
+        let mut places = BTreeMap::new();
+        places.insert("lat".to_string(), "44.985".to_string());
+        places.insert("lon".to_string(), "20.161".to_string());
+
+        let target = feed.target(&places).expect("a filled url");
+        assert!(target.contains("temperature_unit=fahrenheit"));
+        assert!(target.contains("timezone=auto"));
+
+        // A name already in the URL is rewritten, never doubled: two of the
+        // same leaves the host to decide which one was meant, and hosts do
+        // not agree about that.
+        let doubled = Feed {
+            url: Some("https://a.invalid/x?timezone=auto&b=2".into()),
+            params: [("timezone".to_string(), "Europe/Belgrade".to_string())]
+                .into_iter()
+                .collect(),
+            ..Feed::default()
+        };
+        let target = doubled.target(&BTreeMap::new()).expect("a url");
+        assert_eq!(target.matches("timezone=").count(), 1, "{target}");
+        assert!(target.contains("timezone=Europe/Belgrade"), "{target}");
+        assert!(target.contains("b=2"), "the rest of the query survives");
+
+        // A shell feed has no query to put them in, so they are left alone.
+        let shell = Feed {
+            kind: FeedKind::Shell,
+            run: Some("echo '{}'".into()),
+            params: [("temperature_unit".to_string(), "celsius".to_string())]
+                .into_iter()
+                .collect(),
+            ..Feed::default()
+        };
+        assert_eq!(shell.target(&BTreeMap::new()).unwrap(), "echo '{}'");
+    }
+
+    #[test]
+    fn every_offered_parameter_names_its_choices() {
+        for (name, options) in known_params() {
+            assert!(!name.is_empty());
+            // Free text is allowed, but a half-filled list is a picker with a
+            // missing option, which is worse than a text field.
+            if !options.is_empty() {
+                assert!(options.len() >= 2, "{name} offers only {options:?}");
             }
         }
     }
