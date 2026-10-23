@@ -408,6 +408,23 @@ pub fn known_params() -> &'static [Known] {
     ]
 }
 
+/// Intervals worth offering for a kind of source.
+///
+/// Split by who is being asked. A feed that reads this machine costs a few
+/// milliseconds of its own CPU, so a second is reasonable and the dock can
+/// keep up with a fan spinning up. A feed that reads somebody else's host is
+/// a request over their network at their expense, and a second of that is a
+/// denial of service with this daemon's name on it.
+///
+/// Only suggestions: any duration a second or longer is accepted, and a file
+/// that says something else keeps it.
+pub fn intervals(kind: FeedKind) -> &'static [&'static str] {
+    match kind {
+        FeedKind::Shell => &["1s", "2s", "3s", "5s", "10s", "30s", "1m"],
+        FeedKind::Http => &["1m", "5m", "15m", "30m", "1h"],
+    }
+}
+
 /// One parameter the daemon knows how to offer, and where it applies.
 ///
 /// The kind matters: a URL takes them as query, a command takes them as
@@ -715,6 +732,7 @@ fn run(
     let mut failures: u32 = 0;
 
     while !stop.load(Ordering::Relaxed) {
+        let started = std::time::Instant::now();
         match poll(&feed, &target, SystemTime::now()) {
             Ok(sample) => {
                 failures = 0;
@@ -728,7 +746,13 @@ fn run(
 
         // A host that is down is not worth asking on schedule; a host that is
         // up must never be asked more often than it said.
-        if !nap(&stop, every * failures.clamp(1, 4)) {
+        //
+        // The wait is what is left of the interval, not the whole of it. The
+        // vitals helper spends 180 ms watching the processor before it answers,
+        // so sleeping a full second after that would make "every second" mean
+        // every one and a fifth.
+        let wait = (every * failures.clamp(1, 4)).saturating_sub(started.elapsed());
+        if !nap(&stop, wait) {
             return;
         }
     }

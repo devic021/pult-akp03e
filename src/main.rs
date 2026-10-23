@@ -1847,6 +1847,13 @@ fn serve(
                         })
                     })
                     .collect::<Vec<_>>(),
+                // Intervals worth offering, by the kind of thing being asked.
+                // A machine can be read every second; somebody else's host
+                // cannot.
+                "intervals": json!({
+                    "http": feed::intervals(pult::feed::FeedKind::Http),
+                    "shell": feed::intervals(pult::feed::FeedKind::Shell),
+                }),
                 // Where the readings are being asked for, so the app can tell
                 // the difference between "no coordinates yet" and "the host is
                 // down" without guessing.

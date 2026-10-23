@@ -118,12 +118,16 @@ struct FeedReport: Decodable, Equatable {
     var places: [String: String] = [:]
     /// What this daemon will let the app change about a feed.
     var known: [KnownParam] = []
+    /// Intervals worth offering, by the kind of source. Shipped rather than
+    /// written here because what is reasonable depends on who is being asked,
+    /// and the daemon is the one that knows.
+    var intervals: [String: [String]] = [:]
     /// Hours ahead of now the dock is currently reading; zero is the present.
     var hour: Int = 0
 
     static let empty = FeedReport()
 
-    enum CodingKeys: String, CodingKey { case feeds, places, hour, known }
+    enum CodingKeys: String, CodingKey { case feeds, places, hour, known, intervals }
 
     init() {}
 
@@ -132,6 +136,7 @@ struct FeedReport: Decodable, Equatable {
         feeds = try values.decodeIfPresent([FeedStatus].self, forKey: .feeds) ?? []
         places = try values.decodeIfPresent([String: String].self, forKey: .places) ?? [:]
         known = try values.decodeIfPresent([KnownParam].self, forKey: .known) ?? []
+        intervals = try values.decodeIfPresent([String: [String]].self, forKey: .intervals) ?? [:]
         hour = try values.decodeIfPresent(Int.self, forKey: .hour) ?? 0
     }
 

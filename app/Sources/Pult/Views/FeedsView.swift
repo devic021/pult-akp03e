@@ -163,41 +163,49 @@ struct FeedsView: View {
                     )
                 }
                 ForEach(state.feeds.feeds) { feed in
-                    FeedCard(
-                        feed: feed,
-                        known: state.feeds.known,
-                        checking: checking == feed.name,
-                        copied: copied,
-                        opened: opened == feed.name,
-                        toggle: { opened = opened == feed.name ? nil : feed.name },
-                        change: { every, params in
-                            state.setFeed(feed.name, every: every, params: params) { failure in
-                                problem = failure
-                            }
-                        },
-                        check: {
-                            checking = feed.name
-                            state.loadFeeds(check: feed.name)
-                            // The reply replaces the whole report, so there is
-                            // nothing to wait for beyond the next poll of the
-                            // page; a second is enough for the button to have
-                            // visibly done something.
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                                if checking == feed.name { checking = nil }
-                            }
-                        },
-                        copy: { template in
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(template, forType: .string)
-                            copied = template
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                if copied == template { copied = nil }
-                            }
-                        }
-                    )
+                    row(for: feed)
                 }
             }
         }
+    }
+
+    /// One source's card.
+    ///
+    /// Its own function: built inline it was a single expression with four
+    /// closures in it, and the type checker gave up on it.
+    private func row(for feed: FeedStatus) -> some View {
+        FeedCard(
+            feed: feed,
+            known: state.feeds.known,
+            intervals: state.feeds.intervals[feed.kind] ?? [],
+            checking: checking == feed.name,
+            copied: copied,
+            opened: opened == feed.name,
+            toggle: { opened = opened == feed.name ? nil : feed.name },
+            change: { every, params in
+                state.setFeed(feed.name, every: every, params: params) { failure in
+                    problem = failure
+                }
+            },
+            check: {
+                checking = feed.name
+                state.loadFeeds(check: feed.name)
+                // The reply replaces the whole report, so there is nothing to
+                // wait for beyond the next poll of the page; a second is
+                // enough for the button to have visibly done something.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    if checking == feed.name { checking = nil }
+                }
+            },
+            copy: { template in
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(template, forType: .string)
+                copied = template
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    if copied == template { copied = nil }
+                }
+            }
+        )
     }
 
     /// The scenes that report numbers, and the two things about them that are
@@ -237,6 +245,9 @@ struct FeedsView: View {
 private struct FeedCard: View {
     let feed: FeedStatus
     var known: [KnownParam]
+    /// Intervals worth offering, as the daemon reports them for this kind of
+    /// source. A machine can be read every second; a weather host cannot.
+    var intervals: [String]
     var checking: Bool
     var copied: String?
     var opened: Bool
@@ -245,10 +256,6 @@ private struct FeedCard: View {
     var check: () -> Void
     var copy: (String) -> Void
 
-    /// Intervals worth offering. Anything shorter than a minute is impolite to
-    /// somebody else's host, and anything longer than an hour is a number you
-    /// type into the file once.
-    private static let intervals = ["1m", "5m", "15m", "30m", "1h"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -364,9 +371,9 @@ private struct FeedCard: View {
                     // The current value is offered even when it is not one of
                     // ours: a file that says "90s" must not be quietly changed
                     // by the act of opening this panel.
-                    ForEach(Self.intervals.contains(feed.every)
-                        ? Self.intervals
-                        : [feed.every] + Self.intervals, id: \.self) { every in
+                    ForEach(intervals.contains(feed.every)
+                        ? intervals
+                        : [feed.every] + intervals, id: \.self) { every in
                         Text(every).tag(every)
                     }
                 }

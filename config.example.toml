@@ -875,7 +875,10 @@ source = "~/.config/pult/uspravno.gif"
 [feeds.masina]
 kind = "shell"
 run = "{bin}/vitals"
-every = "10s"
+# Seconds, not minutes: this reads the machine it runs on, so it costs a
+# couple of hundredths of a second of its own CPU and nobody else's network.
+# The Sources pane offers one to thirty for a feed like this.
+every = "5s"
 stale_after = "2m"
 require = ["/cpu/cores"]
 
