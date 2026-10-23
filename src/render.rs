@@ -23,6 +23,14 @@ use crate::values::Bindings;
 // same whatever fonts a Mac happens to have, and that the keys and the app
 // share a typeface.
 
+/// The key these measurements are written for.
+///
+/// Every number below is in pixels of a 60 px key, which is what this dock
+/// has. A renderer asked for a larger key multiplies them, so a preview at
+/// four times the size is the same picture larger rather than the same
+/// picture with tiny text in the corner of a big square.
+const REFERENCE_KEY: f32 = 60.0;
+
 /// Label sizes to try, largest first; the first that fits in two lines wins.
 const LABEL_SIZES: &[f32] = &[18.0, 16.0, 14.0, 12.0, 11.0, 10.0, 9.0];
 
@@ -233,6 +241,16 @@ impl Renderer {
         self.size
     }
 
+    /// How much larger than the dock's own key this renderer is drawing.
+    fn scale(&self) -> f32 {
+        (self.size.1 as f32 / REFERENCE_KEY).max(0.1)
+    }
+
+    /// A measurement written for a 60 px key, at this renderer's size.
+    fn at(&self, measure: f32) -> f32 {
+        measure * self.scale()
+    }
+
     /// Renders a key as it looks at rest.
     pub fn key(&self, key: &Key) -> Result<DynamicImage> {
         self.key_frame(key, Frame::default())
@@ -256,7 +274,7 @@ impl Renderer {
             None => contrasting(background),
         };
 
-        let mut label_top = MARGIN;
+        let mut label_top = self.at(MARGIN as f32).round() as i32;
         if let Some(icon) = &key.icon {
             let color = match key.icon_color.as_deref() {
                 Some(color) => parse_color(color)?,
@@ -325,11 +343,11 @@ impl Renderer {
         }
 
         let mut canvas = RgbImage::from_pixel(w, h, background);
-        let room = w as f32 - 2.0 * MARGIN as f32;
+        let room = w as f32 - 2.0 * self.at(MARGIN as f32);
         let band = if readout.caption.is_empty() && readout.icon.is_none() {
             0
         } else {
-            CAPTION_BAND
+            self.at(CAPTION_BAND as f32).round() as i32
         };
 
         if !readout.value.is_empty() {
@@ -364,14 +382,14 @@ impl Renderer {
     /// The largest size at which this reading fits on one line.
     fn value_scale(&self, value: &str, room: f32) -> PxScale {
         for &size in VALUE_SIZES {
-            let scale = PxScale::from(size);
+            let scale = PxScale::from(self.at(size));
             if self.tabular_width(value, scale) <= room {
                 return scale;
             }
         }
         // Nothing fits, so the smallest is drawn and clipped: a reading cut
         // off still says which way the number is going.
-        PxScale::from(*VALUE_SIZES.last().unwrap())
+PxScale::from(self.at(*VALUE_SIZES.last().unwrap()))
     }
 
     /// Draws the caption band: a small icon, then the words.
@@ -384,26 +402,27 @@ impl Renderer {
     ) -> Result<()> {
         let (w, h) = (canvas.width() as i32, canvas.height() as i32);
 
+        let glyph = self.at(CAPTION_ICON as f32).round() as u32;
         let icon_width = match &readout.icon {
-            Some(_) if !readout.caption.is_empty() => CAPTION_ICON as i32 + 2,
-            Some(_) => CAPTION_ICON as i32,
+            Some(_) if !readout.caption.is_empty() => glyph as i32 + self.at(2.0) as i32,
+            Some(_) => glyph as i32,
             None => 0,
         };
 
-        let room = w as f32 - 2.0 * MARGIN as f32 - icon_width as f32;
+        let room = w as f32 - 2.0 * self.at(MARGIN as f32) - icon_width as f32;
         let scale = CAPTION_SIZES
             .iter()
-            .map(|size| PxScale::from(*size))
+            .map(|size| PxScale::from(self.at(*size)))
             .find(|scale| self.width(&readout.caption, *scale) <= room)
-            .unwrap_or_else(|| PxScale::from(*CAPTION_SIZES.last().unwrap()));
+            .unwrap_or_else(|| PxScale::from(self.at(*CAPTION_SIZES.last().unwrap())));
         let text_width = self.width(&readout.caption, scale);
         let total = icon_width as f32 + text_width;
-        let mut x = ((w as f32 - total) / 2.0).max(MARGIN as f32);
+        let mut x = ((w as f32 - total) / 2.0).max(self.at(MARGIN as f32));
         let top = h - band;
 
         if let Some(icon) = &readout.icon {
-            let sprite = self.rasterise(icon, CAPTION_ICON, color, readout.icon_rotate, 1.0)?;
-            let y0 = top + (band - CAPTION_ICON as i32) / 2;
+            let sprite = self.rasterise(icon, glyph, color, readout.icon_rotate, 1.0)?;
+            let y0 = top + (band - glyph as i32) / 2;
             for (sx, sy, px) in sprite.enumerate_pixels() {
                 let alpha = f32::from(px[3]) / 255.0;
                 if alpha > 0.0 {
@@ -457,10 +476,12 @@ impl Renderer {
         frame: Frame,
     ) -> Result<i32> {
         let (w, h) = (canvas.width() as i32, canvas.height() as i32);
+        let margin = self.at(MARGIN as f32).round() as i32;
+        let band = self.at(LABEL_BAND as f32).round() as i32;
         let room = if key.label.is_empty() {
-            h - 2 * MARGIN
+            h - 2 * margin
         } else {
-            h - 2 * MARGIN - LABEL_BAND
+            h - 2 * margin - band
         };
         let box_size = room.max(8) as u32;
 
@@ -476,7 +497,7 @@ impl Renderer {
         let sprite = self.rasterise(icon, box_size, color, rotation, scale)?;
 
         let x0 = (w - sprite.width() as i32) / 2;
-        let y0 = MARGIN;
+        let y0 = margin;
         for (x, y, px) in sprite.enumerate_pixels() {
             let alpha = f32::from(px[3]) / 255.0;
             if alpha > 0.0 {
@@ -538,12 +559,13 @@ impl Renderer {
 
     /// Draws the label, shrinking and wrapping it until it fits below `top`.
     fn draw_label(&self, canvas: &mut RgbImage, label: &str, top: i32, color: Rgb<u8>) {
-        let max_width = canvas.width() as f32 - 2.0 * MARGIN as f32;
-        let max_height = canvas.height() as f32 - top as f32 - MARGIN as f32;
+        let margin = self.at(MARGIN as f32);
+        let max_width = canvas.width() as f32 - 2.0 * margin;
+        let max_height = canvas.height() as f32 - top as f32 - margin;
 
         let mut chosen = None;
         for &size in LABEL_SIZES {
-            let scale = PxScale::from(size);
+            let scale = PxScale::from(self.at(size));
             let font = self.font.as_scaled(scale);
             let lines = wrap(label, |text| self.width(text, scale), max_width);
             let total = font.height() * lines.len() as f32;
@@ -712,7 +734,9 @@ fn draw_page_strip(canvas: &mut RgbImage, page: usize, pages: usize, color: Rgb<
     }
 
     let width = canvas.width() as f32;
-    let gap = 2.0;
+    let scale = (canvas.height() as f32 / REFERENCE_KEY).max(0.1);
+    let gap = 2.0 * scale;
+    let thickness = (2.0 * scale).round().max(1.0) as i32;
     let segment = (width - gap * (pages as f32 + 1.0)) / pages as f32;
     if segment < 1.0 {
         return;
@@ -722,7 +746,7 @@ fn draw_page_strip(canvas: &mut RgbImage, page: usize, pages: usize, color: Rgb<
         let x0 = gap + index as f32 * (segment + gap);
         let alpha = if index == page { 0.95 } else { 0.22 };
         for x in x0.round() as i32..(x0 + segment).round() as i32 {
-            for y in 0..2 {
+            for y in 0..thickness {
                 blend(canvas, x, y, color, alpha);
             }
         }
@@ -747,27 +771,30 @@ pub fn sprite(name: &str, size: u32, color: Rgb<u8>) -> Result<RgbaImage> {
 /// says the same thing and survives the arithmetic. The tick is placed and
 /// covered fractionally, so an hour never snaps to the wrong pixel.
 fn draw_hour_track(canvas: &mut RgbImage, hour: usize, span: usize, color: Rgb<u8>) {
-    const TICK: f32 = 5.0;
     if span < 2 {
         return;
     }
 
+    let scale = (canvas.height() as f32 / REFERENCE_KEY).max(0.1);
+    let tick = 5.0 * scale;
+    let thickness = (2.0 * scale).round().max(1.0) as i32;
+
     let width = canvas.width() as f32;
     for x in 0..canvas.width() as i32 {
-        for y in 0..2 {
+        for y in 0..thickness {
             blend(canvas, x, y, color, 0.14);
         }
     }
 
     let fraction = (hour as f32 / (span - 1) as f32).clamp(0.0, 1.0);
-    let start = fraction * (width - TICK);
-    let end = start + TICK;
+    let start = fraction * (width - tick);
+    let end = start + tick;
     for x in start.floor() as i32..=end.ceil() as i32 {
         let left = (x as f32).max(start);
         let right = ((x + 1) as f32).min(end);
         let coverage = (right - left).clamp(0.0, 1.0);
         if coverage > 0.0 {
-            for y in 0..2 {
+            for y in 0..thickness {
                 blend(canvas, x, y, color, 0.95 * coverage);
             }
         }
@@ -924,6 +951,13 @@ mod tests {
     fn a_reading_is_drawn_as_large_as_it_measures() {
         let renderer = Renderer::new(None, (60, 60)).expect("a renderer");
         let room = 60.0 - 2.0 * MARGIN as f32;
+        // Four times the key is the same picture four times over, not the
+        // same picture with tiny text in the corner of a big square.
+        let large = Renderer::new(None, (240, 240)).expect("a renderer");
+        assert_eq!(
+            large.value_scale("12\u{b0}", room * 4.0).y,
+            renderer.value_scale("12\u{b0}", room).y * 4.0
+        );
 
         // Three glyphs take the top of the ladder, which is the whole point of
         // the ladder: a temperature should be readable across a desk.
