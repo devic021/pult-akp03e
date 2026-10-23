@@ -625,7 +625,13 @@ struct Config: Codable, Equatable {
     }
 
     /// Scene names in a stable order, so the sidebar does not shuffle.
-    var sceneNames: [String] { scenes.keys.sorted() }
+    ///
+    /// Compared the way a reader would, not the way bytes sort: a plain
+    /// `sorted()` puts every lowercase name after every uppercase one, which
+    /// is why "general" and "iTerm" used to sit under Xcode.
+    var sceneNames: [String] {
+        scenes.keys.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
 
     /// Scenes that drive the keys.
     ///
@@ -640,6 +646,21 @@ struct Config: Codable, Equatable {
     /// "zora" had to do with Chrome and Mail.
     var drawingScenes: [String] {
         sceneNames.filter { scenes[$0]?.isJustADrawing ?? false }
+    }
+
+    /// Scenes an application claims.
+    ///
+    /// Split by what actually selects a scene rather than by a flag somebody
+    /// has to maintain: give a page an `apps` line and it moves across on its
+    /// own, take it away and it moves back.
+    var appScenes: [String] {
+        keyScenes.filter { !(scenes[$0]?.apps.isEmpty ?? true) }
+    }
+
+    /// Scenes nothing claims: the fallback, and the pages you go to because
+    /// you meant to, like the weather.
+    var pageScenes: [String] {
+        keyScenes.filter { scenes[$0]?.apps.isEmpty ?? true }
     }
 }
 

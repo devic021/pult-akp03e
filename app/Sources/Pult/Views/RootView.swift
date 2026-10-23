@@ -166,11 +166,23 @@ private struct Sidebar: View {
                 }
             )) {
                 Section {
-                    ForEach(state.config.keyScenes, id: \.self) { name in
+                    ForEach(state.config.appScenes, id: \.self) { name in
                         SceneRow(name: name).tag(name)
                     }
                 } header: {
-                    SidebarHeading(T("nav.scenes"))
+                    SidebarHeading(T("sidebar.apps"))
+                }
+
+                // The fallback and the readouts, together because neither is
+                // reached by switching application: you land on one when
+                // nothing claims what is in front, and you go to the other
+                // because you meant to.
+                Section {
+                    ForEach(state.config.pageScenes, id: \.self) { name in
+                        SceneRow(name: name).tag(name)
+                    }
+                } header: {
+                    SidebarHeading(T("sidebar.pages"))
                 }
 
                 // Drawings are deliberately not listed here. They live in the
@@ -394,7 +406,12 @@ private struct SceneRow: View {
         Button(T("scene.show")) { state.show(scene: name) }
         Button(T("scene.default")) { state.config.defaultScene = name }
         Divider()
+        // The fallback cannot go: the daemon refuses a configuration whose
+        // default scene is missing. The item was there and did nothing, which
+        // reads as the app being broken rather than as a rule.
         Button(T("scene.delete"), role: .destructive) { state.deleteScene(name) }
+            .disabled(name == state.config.defaultScene)
+            .help(name == state.config.defaultScene ? T("scene.delete.default") : "")
             .disabled(name == state.config.defaultScene)
     }
 }

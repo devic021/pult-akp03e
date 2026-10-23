@@ -732,16 +732,42 @@ final class AppState: ObservableObject {
 
         config.scenes.removeValue(forKey: name)
         config.scenes[trimmed] = scene
+
+        // Everything that can name a scene, renamed with it. Missing one of
+        // these leaves a binding that points at nothing: the key still exists,
+        // the press still happens, and the dock simply does not move. The
+        // buttons are the case that bites, because every drawing carries one
+        // bound to the fallback scene as its way back out.
         if config.defaultScene == name { config.defaultScene = trimmed }
-        // A scene that pointed at the old name would otherwise dangle.
+        if config.pinned == name { config.pinned = trimmed }
+
+        if config.idle?.scene == name { config.idle?.scene = trimmed }
+        if let playlist = config.idle?.scenes {
+            config.idle?.scenes = playlist.map { $0 == name ? trimmed : $0 }
+        }
+
         for (key, var other) in config.scenes {
             var touched = false
+
             for index in other.keys.indices where other.keys[index].scene == name {
                 other.keys[index].scene = trimmed
                 touched = true
             }
+            for index in other.buttons.indices where other.buttons[index].scene == name {
+                other.buttons[index].scene = trimmed
+                touched = true
+            }
+            for index in other.encoders.indices {
+                for part in [\Knob.cw, \Knob.ccw, \Knob.press]
+                where other.encoders[index][keyPath: part].scene == name {
+                    other.encoders[index][keyPath: part].scene = trimmed
+                    touched = true
+                }
+            }
+
             if touched { config.scenes[key] = other }
         }
+
         if selectedScene == name { selectedScene = trimmed }
         if selectedDrawing == name { selectedDrawing = trimmed }
     }
