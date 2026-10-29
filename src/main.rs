@@ -600,11 +600,15 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                             let at = targets.iter().position(|t| t == current);
                             let next = &targets[at.map_or(0, |i| (i + 1) % targets.len())];
 
+                            // The rotated pin is live state, not a saved
+                            // preference: writing it to the config on every
+                            // press churns the file, and an editor open on the
+                            // same file then reads that as the file changing
+                            // under an unsaved edit. It lasts until the daemon
+                            // next restarts, which is the right lifetime for a
+                            // source flipped from the dock.
                             state.config.pinned =
                                 (!next.is_empty()).then(|| next.clone());
-                            if let Err(e) = state.config.save(&state.path) {
-                                eprintln!("could not move the pin: {e:#}");
-                            }
 
                             // An empty step is "follow the frontmost app", so
                             // the dock jumps straight to that app's scene.
