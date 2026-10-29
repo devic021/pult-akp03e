@@ -162,10 +162,26 @@ pub fn fill(key: &Key, bindings: &Bindings, now: SystemTime, hours: i32) -> Key 
     }
 
     let text = |template: &str| bindings.resolve(template, now, hours).text;
+
+    // A ramp sets the background from a feed, the same as on a reading. The
+    // ordinary key path knows only `color`, so resolve the ramp to a concrete
+    // colour here and let it stand in. Falls back to the colour as written.
+    let color = key
+        .ramp
+        .as_ref()
+        .and_then(|ramp| {
+            bindings
+                .number(&ramp.field, now, hours)
+                .and_then(|value| ramp.color(value))
+        })
+        .map(|rgb| format!("#{:02x}{:02x}{:02x}", rgb.0[0], rgb.0[1], rgb.0[2]))
+        .or_else(|| key.color.clone());
+
     Key {
         label: text(&key.label),
         icon: key.icon.as_deref().map(text).filter(known_icon),
         icon_rotate: key.icon_rotate.as_deref().map(text),
+        color,
         ..key.clone()
     }
 }
@@ -351,18 +367,21 @@ impl Renderer {
         };
 
         if !readout.value.is_empty() {
-            let scale = self.value_scale(&readout.value, room);
-            let x = (w as f32 - self.tabular_width(&readout.value, scale)) / 2.0;
             let field = (h as i32 - band) as f32;
-            let baseline = self.centred(&readout.value, scale, field);
-            self.draw_glyphs(
-                &mut canvas,
-                &readout.value,
-                (x, baseline),
-                scale,
-                foreground,
-                true,
-            );
+            // A value may carry more than one line, split on a newline: two
+            // rates stacked read as one reading and must share a size, so the
+            // scale is the largest that fits the widest line across the key and
+            // all the lines down it. A single line is the ordinary case.
+            let lines: Vec<&str> = readout.value.split('\n').collect();
+            let scale = self.value_scale_multi(&lines, room, field);
+            let rows = lines.len().max(1) as f32;
+            let row = field / rows;
+            for (index, line) in lines.iter().enumerate() {
+                let x = (w as f32 - self.tabular_width(line, scale)) / 2.0;
+                let top = index as f32 * row;
+                let baseline = top + self.centred(line, scale, row);
+                self.draw_glyphs(&mut canvas, line, (x, baseline), scale, foreground, true);
+            }
         }
 
         if band > 0 {
@@ -380,6 +399,27 @@ impl Renderer {
     }
 
     /// The largest size at which this reading fits on one line.
+    /// The largest value scale that fits every line, both across the key and
+    /// stacked down it. One line falls through to the ordinary width fit.
+    fn value_scale_multi(&self, lines: &[&str], room: f32, field: f32) -> PxScale {
+        if lines.len() <= 1 {
+            return self.value_scale(lines.first().copied().unwrap_or(""), room);
+        }
+        let rows = lines.len() as f32;
+        for &size in VALUE_SIZES {
+            let scale = PxScale::from(self.at(size));
+            let widest = lines
+                .iter()
+                .map(|line| self.tabular_width(line, scale))
+                .fold(0.0_f32, f32::max);
+            let line_height = self.font.as_scaled(scale).height();
+            if widest <= room && line_height * rows <= field {
+                return scale;
+            }
+        }
+        PxScale::from(self.at(*VALUE_SIZES.last().unwrap()))
+    }
+
     fn value_scale(&self, value: &str, room: f32) -> PxScale {
         for &size in VALUE_SIZES {
             let scale = PxScale::from(self.at(size));

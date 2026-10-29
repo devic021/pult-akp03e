@@ -591,6 +591,37 @@ fn run(hid: &HidApi, state: &mut State, control: &Control) -> Result<()> {
                                 println!("Hour    : +{}h", state.hour);
                             }
                         }
+                        Some(Step::Rotate(targets)) if !targets.is_empty() => {
+                            // The next step is read from where the pin is now,
+                            // so the button is right even if the pin moved some
+                            // other way. An unrecognised current pin starts the
+                            // list from the top.
+                            let current = state.config.pinned.as_deref().unwrap_or("");
+                            let at = targets.iter().position(|t| t == current);
+                            let next = &targets[at.map_or(0, |i| (i + 1) % targets.len())];
+
+                            state.config.pinned =
+                                (!next.is_empty()).then(|| next.clone());
+                            if let Err(e) = state.config.save(&state.path) {
+                                eprintln!("could not move the pin: {e:#}");
+                            }
+
+                            // An empty step is "follow the frontmost app", so
+                            // the dock jumps straight to that app's scene.
+                            active = state.config.scene_for(app.as_deref()).to_string();
+                            page = 0;
+                            paint(&device, state, &active, page, display_keys, &found, animation_for(&mut loaded, state, &active, &found))?;
+                            painted_at = Instant::now();
+                            tau = 0.0;
+                            let how = if next.is_empty() { "follow app" } else { next };
+                            println!("Rotate  : {how} -> scene {active:?}");
+                            control.publish(json!({
+                                "event": "scene",
+                                "scene": active,
+                                "page": page,
+                            }));
+                        }
+                        Some(Step::Rotate(_)) => {}
                         None => {}
                     }
                 }
@@ -1270,9 +1301,11 @@ fn output_of(state: &State, key: &Key, scene: &str, index: u8) -> String {
         );
     }
     let key = resolved(state, key, scene, index);
+    // The colour is in here too: `fill` has resolved any ramp into it, so a
+    // tile that only changes colour, a door going red, still counts as changed.
     format!(
-        "{}\u{1f}{:?}\u{1f}{:?}",
-        key.label, key.icon, key.icon_rotate
+        "{}\u{1f}{:?}\u{1f}{:?}\u{1f}{:?}",
+        key.label, key.icon, key.icon_rotate, key.color
     )
 }
 
@@ -1419,6 +1452,9 @@ enum Step {
     Cycle(u8),
     /// A knob moved the forecast.
     Scrub(Hour),
+    /// A press stepped the pin through a list. The loop reads the current pin
+    /// to pick the next target.
+    Rotate(Vec<String>),
 }
 
 /// Runs what an event is bound to; returns where to go next, if anywhere.
@@ -1488,6 +1524,7 @@ fn handle(
                 Ok(Outcome::Sound(sound)) => Ok(Some(Step::Sound(sound, false))),
                 Ok(Outcome::Muted(sound)) => Ok(Some(Step::Sound(sound, true))),
                 Ok(Outcome::Scrub(hour)) => Ok(Some(Step::Scrub(hour))),
+                Ok(Outcome::Rotate(targets)) => Ok(Some(Step::Rotate(targets))),
                 Ok(Outcome::Nothing) => Ok(None),
                 // A failed action is the user's problem to fix, not a reason to quit.
                 Err(e) => {

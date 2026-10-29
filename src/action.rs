@@ -19,6 +19,10 @@ pub enum Outcome {
     TurnPage(Turn),
     /// Move the whole scene through the forecast.
     Scrub(Hour),
+    /// Step the dock's pin through a list: each entry a scene to pin, an empty
+    /// one to follow the frontmost application. The loop reads the current pin
+    /// to decide the next one.
+    Rotate(Vec<String>),
 }
 
 /// Where a page action lands, once the number of pages is known.
@@ -56,6 +60,8 @@ pub fn describe(action: &Action) -> String {
         format!("page {page:?}").to_lowercase()
     } else if let Some(hour) = action.hour {
         format!("hour {hour:?}").to_lowercase()
+    } else if let Some(targets) = &action.rotate {
+        format!("rotate {targets:?}")
     } else {
         "nothing".to_string()
     }
@@ -114,6 +120,10 @@ pub fn run(action: &Action) -> Result<Outcome> {
 
     if let Some(hour) = action.hour {
         return Ok(Outcome::Scrub(hour));
+    }
+
+    if let Some(targets) = &action.rotate {
+        return Ok(Outcome::Rotate(targets.clone()));
     }
 
     Ok(Outcome::Nothing)

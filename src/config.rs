@@ -634,6 +634,12 @@ impl Key {
         if self.reads() {
             return true;
         }
+        // A ramp paints the background from a feed, so a key wearing one is a
+        // reading even when it shows no number: a room tile that lights up when
+        // the room is on, a door that goes red when it opens.
+        if self.ramp.is_some() {
+            return true;
+        }
         if self.label.contains('{') {
             return true;
         }
@@ -780,6 +786,15 @@ pub struct Action {
     /// five numbers from a different hour sitting beside it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hour: Option<Hour>,
+    /// Rotate what the dock shows through a fixed list, one step per press.
+    ///
+    /// Each entry is a scene to pin, and an empty string is "follow the
+    /// frontmost application" (no pin at all). The next step is read from the
+    /// current pin, not remembered here, so the button stays right even when
+    /// the pin was moved some other way, and it is the one place the dock can
+    /// go back to following applications once something has been pinned.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rotate: Option<Vec<String>>,
 }
 
 /// Which hour the keys read from.
@@ -823,6 +838,7 @@ impl Action {
             + usize::from(self.mute.is_some())
             + usize::from(self.page.is_some())
             + usize::from(self.hour.is_some())
+            + usize::from(self.rotate.is_some())
     }
 }
 
@@ -974,6 +990,33 @@ impl Config {
                     "scene {name:?} has {} encoders, the dock has 3",
                     scene.encoders.len()
                 );
+            }
+
+            // A rotate that names a scene the config does not define would skip
+            // a dead stop without saying why, so it is refused here. An empty
+            // entry is "follow the frontmost application" and is always valid.
+            let actions = scene
+                .keys
+                .iter()
+                .map(|key| &key.action)
+                .chain(scene.buttons.iter())
+                .chain(
+                    scene
+                        .encoders
+                        .iter()
+                        .flat_map(|enc| [&enc.cw, &enc.ccw, &enc.press]),
+                );
+            for action in actions {
+                if let Some(targets) = &action.rotate {
+                    for target in targets {
+                        if !target.is_empty() && !self.scenes.contains_key(target) {
+                            bail!(
+                                "scene {name:?} has a rotate step {target:?} \
+                                 that is not a defined scene"
+                            );
+                        }
+                    }
+                }
             }
 
             if let Some(surface) = scene.canvas() {
@@ -1405,6 +1448,39 @@ apps = ["com.google.Chrome"]
         // A pin naming a scene that is not there is refused, the same way the
         // default scene is: a dock pinned to nothing has no answer at all.
         config.pinned = Some("Nema".into());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn a_rotate_cycles_the_pin_and_refuses_an_unknown_target() {
+        let text = r#"
+default = "general"
+[scenes.general]
+[scenes.Vreme]
+[scenes."Mašina"]
+[[scenes.general.buttons]]
+rotate = ["", "Vreme", "Mašina"]
+"#;
+        let config: Config = toml::from_str(text).expect("parses");
+        config.validate().expect("validates");
+
+        // The button carries the list, and an empty entry is a valid step: it
+        // is how the dock goes back to following the frontmost application.
+        let targets = config.scenes["general"].buttons[0]
+            .rotate
+            .as_deref()
+            .expect("a rotate");
+        assert_eq!(targets, ["", "Vreme", "Mašina"]);
+
+        // A step naming a scene the config does not define is refused, so the
+        // button never lands on a dead stop.
+        let bad = r#"
+default = "general"
+[scenes.general]
+[[scenes.general.buttons]]
+rotate = ["", "Nema"]
+"#;
+        let config: Config = toml::from_str(bad).expect("parses");
         assert!(config.validate().is_err());
     }
 
