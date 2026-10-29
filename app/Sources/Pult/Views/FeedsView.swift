@@ -11,6 +11,7 @@ struct FeedsView: View {
     @EnvironmentObject private var l10n: L10n
     @StateObject private var locator = Locator()
     @StateObject private var placeName = PlaceName()
+    @StateObject private var ha = HomeAssistant.shared
 
     @State private var lat = ""
     @State private var lon = ""
@@ -31,6 +32,7 @@ struct FeedsView: View {
                     intro: T("feeds.says")
                 )
 
+                homeAssistant
                 place
                 sources
                 readingScenes
@@ -49,6 +51,72 @@ struct FeedsView: View {
         }
         .onChange(of: state.feeds.places) { _ in adoptPlaces() }
         .onAppear { adoptPlaces() }
+    }
+
+    // MARK: - Home Assistant
+
+    private var homeAssistant: some View {
+        Section2(T("ha.title"), symbol: "house") {
+            ActionCard(
+                T("ha.connection"),
+                symbol: "link",
+                detail: T("ha.connection.help")
+            ) {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        TextField(
+                            "",
+                            text: $ha.url,
+                            prompt: Text("http://homeassistant.local:8123")
+                        )
+                        .textFieldStyle(.roundedBorder)
+                        .font(.appCallout.monospaced())
+
+                        Button(T("ha.detect")) { Task { await ha.detect() } }
+                            .buttonStyle(.pult)
+                            .disabled(ha.status == .checking)
+                    }
+
+                    SecureField("", text: $ha.token, prompt: Text(T("ha.token")))
+                        .textFieldStyle(.roundedBorder)
+                        .font(.appCallout.monospaced())
+
+                    HStack(spacing: 8) {
+                        Button(T("ha.save")) {
+                            ha.apply()
+                            Task { await ha.test() }
+                        }
+                        .buttonStyle(.pultProminent)
+
+                        Button(T("ha.test")) { Task { await ha.test() } }
+                            .buttonStyle(.pult)
+                            .disabled(ha.status == .checking || ha.url.isEmpty)
+
+                        Spacer()
+                        haStatus
+                    }
+                }
+            }
+
+            note(T("ha.powers"), tone: Design.muted, symbol: "info.circle")
+        }
+    }
+
+    private var haStatus: some View {
+        let info = haStatusInfo
+        return Label(info.text, systemImage: info.symbol)
+            .font(.appCaption)
+            .foregroundStyle(info.tone)
+    }
+
+    private var haStatusInfo: (text: String, tone: Color, symbol: String) {
+        switch ha.status {
+        case .unknown: return (T("ha.status.unknown"), Design.muted, "questionmark.circle")
+        case .checking: return (T("ha.status.checking"), Design.muted, "ellipsis.circle")
+        case .ready: return (T("ha.status.ready"), Design.good, "checkmark.circle.fill")
+        case .unauthorized: return (T("ha.status.unauthorized"), Design.warn, "key.slash")
+        case .unreachable: return (T("ha.status.unreachable"), Design.bad, "wifi.slash")
+        }
     }
 
     // MARK: - Where the dock is

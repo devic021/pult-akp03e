@@ -112,6 +112,19 @@ struct SettingsView: View {
                     }
 
                     ActionCard(
+                        T("settings.rotate"),
+                        symbol: "arrow.triangle.2.circlepath",
+                        detail: T("settings.rotate.help")
+                    ) {
+                        Toggle("", isOn: Binding(
+                            get: { rotateOn },
+                            set: { setRotate($0) }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                    }
+
+                    ActionCard(
                         T("settings.pressFeedback.short"),
                         symbol: "hand.tap",
                         detail: T("settings.pressFeedback.help")
@@ -270,6 +283,34 @@ struct SettingsView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+
+    /// Whether the first round button is bound to switch source. Managed the
+    /// same across every scene, so one scene carrying it answers for all.
+    private var rotateOn: Bool {
+        state.config.scenes.values.contains { $0.buttons.first?.rotate != nil }
+    }
+
+    /// What the first button steps through: follow the frontmost app, then
+    /// every scene that reads (the weather, the machine, the home). Derived,
+    /// not typed, so a newly added readout joins the cycle on its own.
+    private var rotateSources: [String] { [""] + state.config.readingScenes }
+
+    /// Binds, or frees, the first round button on every scene. It adopts the
+    /// daemon's own rotate action rather than inventing a second mechanism, so
+    /// the dock behaves the same whether this was set here or written by hand.
+    private func setRotate(_ on: Bool) {
+        let sources = rotateSources
+        for name in state.config.sceneNames {
+            guard var scene = state.config.scenes[name] else { continue }
+            if on {
+                if scene.buttons.isEmpty { scene.buttons.append(Action()) }
+                scene.buttons[0] = Action(rotate: sources)
+            } else if scene.buttons.first?.rotate != nil {
+                scene.buttons[0] = Action()
+            }
+            state.config.scenes[name] = scene
+        }
     }
 
     private func reveal() {

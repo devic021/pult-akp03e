@@ -12,7 +12,9 @@ struct ActionEditor: View {
                 get: { action.kind },
                 set: { action.become($0) }
             )) {
-                ForEach(Action.Kind.allCases) { kind in
+                // Source rotation is set once, under Settings, not hand-bound
+                // per key; it only appears here when a key already carries it.
+                ForEach(Action.Kind.allCases.filter { $0 != .rotate || action.kind == .rotate }) { kind in
                     Text(kind.label).tag(kind)
                 }
             }
@@ -106,6 +108,9 @@ struct ActionEditor: View {
                 if !compact {
                     Text(T("action.hour.help")).font(.appCaption).foregroundStyle(.secondary)
                 }
+
+            case .rotate:
+                Text(T("action.rotate.help")).font(.appCaption).foregroundStyle(.secondary)
             }
         }
     }
