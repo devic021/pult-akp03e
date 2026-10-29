@@ -1,9 +1,9 @@
 # Pult
 
 A macOS app for the **Ajazz AKP03E** stream dock. The six keys follow whatever
-application is in front, or hold still and report something: the weather, or
-what this Mac is doing to itself. Everything about them is editable without
-touching a configuration file.
+application is in front, or hold still and report something: the weather, what
+this Mac is doing to itself, or what is happening in your home. Everything about
+them is editable without touching a configuration file.
 
 ![The scene editor](assets/readme/scenes.png)
 
@@ -66,6 +66,7 @@ from the knobs alone.
 | `volume` | Raise or lower the system volume |
 | `mute` | Silence the output, or let it speak again |
 | `hour` | Walk a scene of readings through its forecast |
+| `rotate` | Step the dock between its sources on each press |
 
 Every key is drawn by the daemon and sent as a finished picture, so what the
 editor shows is what the dock shows: the preview is the same renderer.
@@ -148,6 +149,36 @@ answering.
 Because it reads the machine it runs on rather than somebody else's host, it
 can be asked every second.
 
+## Home Assistant
+
+![A home overview on the dock](assets/readme/dock-home.png)
+
+A source can be a whole house. Point Pult at a
+[Home Assistant](https://www.home-assistant.io) instance in the Sources pane,
+an address and a long-lived token, and its states become readings. The token is
+kept in the login keychain and mirrored into a file the daemon reads, so it
+never lands in the configuration file the app round-trips and backs up. The pane
+can find a local instance on its own and says whether the token is accepted.
+
+The readings work like the weather: a room temperature on a cold-to-hot ramp,
+the power drawn right now, how many lights are on, the energy used today, each
+able to `cycle` to a related number behind it.
+
+![Home controls on the dock](assets/readme/dock-home-controls.png)
+
+A key can also act on the house rather than only report it. A `run` action calls
+Home Assistant back, so one key both commands and reports: a light key toggles a
+room and colours itself by whether anything there is on, a climate key shows its
+mode and setpoint, a media key drives whichever television is turned on. Pull a
+whole page of these together, lights, heating, energy, the internet link, and
+the dock becomes a panel for the house that is a keystroke away from the one for
+the Mac.
+
+The **first round button** moves between the two. Bound to `rotate`, each press
+steps the dock through its sources, following the frontmost app, then the
+weather, the machine, the home, so one key reaches everything without leaving a
+hand on the keyboard.
+
 ## The device
 
 ![The device pane](assets/readme/device.png)
@@ -205,8 +236,10 @@ frontmost application is checked, and whether a press flashes on screen.
 
 **What the dock shows**: normally it follows whichever application is in front,
 but it can be pinned to one scene whatever you are doing, which is what the
-weather and the machine pages are for. The screensaver is a separate question
-and still applies.
+weather, the machine and the home pages are for. The screensaver is a separate
+question and still applies. The **first round button** can be set to switch
+source on each press, cycling the dock between following the app and each scene
+that reads.
 
 The background service can be restarted, stopped, set to start at login, or
 repaired if the app has been moved. The configuration can be revealed, exported
