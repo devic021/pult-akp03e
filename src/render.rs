@@ -360,10 +360,19 @@ impl Renderer {
 
         let mut canvas = RgbImage::from_pixel(w, h, background);
         let room = w as f32 - 2.0 * self.at(MARGIN as f32);
-        let band = if readout.caption.is_empty() && readout.icon.is_none() {
+        let caption_lines = if readout.caption.is_empty() {
             0
         } else {
-            self.at(CAPTION_BAND as f32).round() as i32
+            readout.caption.split('\n').count() as i32
+        };
+        let band = if caption_lines == 0 && readout.icon.is_none() {
+            0
+        } else {
+            // A stacked caption needs a taller band, each extra line most of a
+            // band more. The value is sized by its width, so a shorter field
+            // never shrinks it.
+            let extra = (caption_lines.max(1) - 1) * (CAPTION_BAND - 3);
+            self.at((CAPTION_BAND + extra) as f32).round() as i32
         };
 
         if !readout.value.is_empty() {
@@ -432,7 +441,9 @@ impl Renderer {
 PxScale::from(self.at(*VALUE_SIZES.last().unwrap()))
     }
 
-    /// Draws the caption band: a small icon, then the words.
+    /// Draws the caption band: a small icon then the words on one line, or, when
+    /// the caption carries a newline, the words stacked with no icon, so a short
+    /// two-line label reads larger than one long line squeezed to fit.
     fn draw_caption(
         &self,
         canvas: &mut RgbImage,
@@ -441,24 +452,50 @@ PxScale::from(self.at(*VALUE_SIZES.last().unwrap()))
         color: Rgb<u8>,
     ) -> Result<()> {
         let (w, h) = (canvas.width() as i32, canvas.height() as i32);
+        let top = h - band;
+        let lines: Vec<&str> = if readout.caption.is_empty() {
+            Vec::new()
+        } else {
+            readout.caption.split('\n').collect()
+        };
 
+        // The icon rides beside a single line only; a stacked caption takes the
+        // full width and drops the icon, which is what a two-line label wants.
+        let stacked = lines.len() > 1;
         let glyph = self.at(CAPTION_ICON as f32).round() as u32;
-        let icon_width = match &readout.icon {
-            Some(_) if !readout.caption.is_empty() => glyph as i32 + self.at(2.0) as i32,
-            Some(_) => glyph as i32,
-            None => 0,
+        let icon_width = if stacked {
+            0
+        } else {
+            match &readout.icon {
+                Some(_) if !readout.caption.is_empty() => glyph as i32 + self.at(2.0) as i32,
+                Some(_) => glyph as i32,
+                None => 0,
+            }
         };
 
         let room = w as f32 - 2.0 * self.at(MARGIN as f32) - icon_width as f32;
         let scale = CAPTION_SIZES
             .iter()
             .map(|size| PxScale::from(self.at(*size)))
-            .find(|scale| self.width(&readout.caption, *scale) <= room)
+            .find(|scale| lines.iter().all(|line| self.width(line, *scale) <= room))
             .unwrap_or_else(|| PxScale::from(self.at(*CAPTION_SIZES.last().unwrap())));
+
+        if stacked {
+            let rows = lines.len() as i32;
+            let row = band / rows;
+            for (index, line) in lines.iter().enumerate() {
+                let text_width = self.width(line, scale);
+                let x = ((w as f32 - text_width) / 2.0).max(self.at(MARGIN as f32));
+                let line_top = top + index as i32 * row;
+                let baseline = line_top as f32 + self.centred(line, scale, row as f32);
+                self.draw_line(canvas, line, x, baseline, scale, color);
+            }
+            return Ok(());
+        }
+
         let text_width = self.width(&readout.caption, scale);
         let total = icon_width as f32 + text_width;
         let mut x = ((w as f32 - total) / 2.0).max(self.at(MARGIN as f32));
-        let top = h - band;
 
         if let Some(icon) = &readout.icon {
             let sprite = self.rasterise(icon, glyph, color, readout.icon_rotate, 1.0)?;
