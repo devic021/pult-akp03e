@@ -7,7 +7,10 @@
 //!
 //! Deliberately absent: anything that keeps the Mac awake. A key pad must
 //! never be the reason a laptop does not sleep, so no power assertion is taken
-//! here and none can be configured.
+//! here and none can be configured. The duty that follows from that rule: the
+//! idle-sleep query must be answered at once. Ignoring it does not prevent
+//! sleep, but it delays each one by the thirty-second timeout — breaking the
+//! same rule by accident.
 
 use std::ffi::c_void;
 
@@ -53,6 +56,8 @@ extern "C" {
     static kCFRunLoopCommonModes: CFStringRef;
 }
 
+/// `kIOMessageCanSystemSleep`: the idle-sleep query, sent before `WILL_SLEEP`.
+const CAN_SLEEP: u32 = 0xE000_0270;
 /// `kIOMessageSystemWillSleep`.
 const WILL_SLEEP: u32 = 0xE000_0280;
 /// `kIOMessageSystemHasPoweredOn`.
@@ -95,6 +100,17 @@ extern "C" fn on_power_change(
     let Some(events) = EVENTS.get() else { return };
 
     match message {
+        CAN_SLEEP => {
+            // The idle-sleep query. Whoever registers for system power must
+            // answer it, and we always answer yes: Pult never holds the Mac
+            // awake. Leaving it unanswered is what made every idle sleep wait
+            // the full thirty-second acknowledgement timeout. Unlike the paint
+            // before WILL_SLEEP there is nothing to do first, so allow it here
+            // on the callback thread rather than routing it through the loop.
+            unsafe {
+                IOAllowPowerChange(*ROOT.get().unwrap_or(&0), argument as isize);
+            }
+        }
         WILL_SLEEP => {
             let permission = Permission {
                 root: *ROOT.get().unwrap_or(&0),
